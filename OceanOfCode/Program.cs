@@ -25,9 +25,6 @@ namespace OceanOfCode
             while (true)
             {
                 gameManager.SetPlayersInformations();
-                string sonarResult = Helpers.ReadLine();
-                string opponentOrders = Helpers.ReadLine();
-
                 gameManager.WritePosition();
                 gameManager.Play();
 
@@ -142,8 +139,8 @@ namespace OceanOfCode
         /// Défini si le joueur est le premier à jouer
         /// </summary>
         public bool First => PlayerId == 0;
-        public bool ImOnTop => Position.Y <= 7;
-        public bool ImOnLeft => Position.X <= 7;
+        public bool ImOnTop => Position?.Y <= 7;
+        public bool ImOnLeft => Position?.X <= 7;
         #endregion
 
     }
@@ -178,7 +175,7 @@ namespace OceanOfCode
 
         public override string Use()
         {
-            return "TORNEDO {0} {1}";
+            return "TORPEDO {0} {1}";
         }
     }
 
@@ -391,15 +388,36 @@ namespace OceanOfCode
         /// </summary>
         private void UseDevice(ref string actions)
         {
-            //if(Me.Torpedo.CanUse())
-            //{
-            //    var lastMoves = Me.LastMoves.Skip(Me.LastMoves.Count - 4).Take(3).ToList();
-            //    var lastEnemyMoves = Enemy.LastMoves.Skip(Me.LastMoves.Count - 4).Take(3).ToList();
-            //    if(lastMoves.SequenceEqual(lastEnemyMoves)) {
-            //        var action = Me.Torpedo.Use();
-            //        actions = string.Format($"{action}|", Me.Position.Y, Me.Position.X);
-            //    }
-            //}
+            if (Me.Torpedo.CanUse())
+            {
+
+#if WriteDebug
+                Console.Error.WriteLine($"I can use torpedo");
+#endif
+
+                var lastMoves = Me.LastMoves.Skip(Me.LastMoves.Count - 4).Take(3).ToList();
+                var lastEnemyMoves = Enemy.LastMoves.Skip(Me.LastMoves.Count - 4).Take(3).ToList();
+                if (lastMoves.SequenceEqual(lastEnemyMoves))
+                {
+#if WriteDebug
+                    Console.Error.WriteLine($"same scheme -> shoot him");
+#endif
+                    var action = Me.Torpedo.Use();
+
+                    // faudra faire attention à l'ile
+                    var isOutOfSouth = Me.Position.Y + 2 > Map.Height-1;
+                    var isOutOfNorth = Me.Position.Y - 2 < 0 ;
+                    var isOutOfEst = Me.Position.X + 2 > Map.Width - 1;
+                    var isOutOfWest = Me.Position.X - 2 < 0;
+
+                    var offsetY = isOutOfSouth ? -2 : +2 ;
+                    var offsetX = isOutOfWest ? -2 : +2;
+
+
+
+                    actions += string.Format($"{action}|", Me.Position.Y+offsetY, Me.Position.X+offsetX);
+                }
+            }
 
         }
 
@@ -416,16 +434,16 @@ namespace OceanOfCode
 
             // on regarde les quels sont accessibles et pour le moment on prend la première
             if (CanDoAction(west, Direction.West))
-                actions = Direction.West.ToMove();
+                actions += Direction.West.ToMove();
             else if (CanDoAction(est, Direction.Est))
-                actions = Direction.Est.ToMove();
+                actions += Direction.Est.ToMove();
             else if (CanDoAction(north, Direction.North))
-                actions = Direction.North.ToMove();
+                actions += Direction.North.ToMove();
             else if (CanDoAction(south, Direction.South))
-                actions = Direction.South.ToMove();
+                actions += Direction.South.ToMove();
             else
             {
-                actions = "SURFACE";
+                actions += "SURFACE";
             }
         }
 
@@ -434,8 +452,8 @@ namespace OceanOfCode
         /// </summary>
         private void LoadDevice(ref string actions)
         {
-            //if (Me.Torpedo.Couldown > 0)
-            //    actions += " TORPEDO";
+            if (Me.Torpedo.Couldown > 0)
+                actions += " TORPEDO";
 
             //if (Me.Sonar.Couldown < 0)
             //    actions += " SONAR";
@@ -531,7 +549,12 @@ namespace OceanOfCode
 
         public static Direction ToDirection(this string move)
         {
-            switch (move)
+            var input = move;
+            var multiOrders = input.Contains("|");
+            if(multiOrders)
+                input = input.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries)[1];
+
+            switch (input)
             {
                 case "MOVE S": return Direction.South;
                 case "MOVE N": return Direction.North;
