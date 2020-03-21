@@ -351,10 +351,10 @@ namespace OceanOfCode
             var height = _player.Position.Y + yOffset;
             var width = _player.Position.X + xOffset;
 
-            if (height < 0 || height > 15)
+            if (height < 0 || height > Map.Height -1)
                 return null;
 
-            if (width < 0 || width > 15)
+            if (width < 0 || width > Map.Width - 1)
                 return null;
 
             var cell = Map.MapConfiguration[_player.Position.Y + yOffset][_player.Position.X + xOffset];
