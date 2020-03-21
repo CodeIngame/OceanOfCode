@@ -50,6 +50,20 @@ namespace OceanOfCode
         /// La configuration de la carte
         /// </summary>
         public List<List<MapCell>> MapConfiguration { get; set; } = new List<List<MapCell>>();
+
+        public override string ToString()
+        {
+            var mapTxt = new StringBuilder();
+            MapConfiguration.ForEach(row =>
+            {
+                row.ForEach(c =>
+                {
+                    mapTxt.Append($"{c.Cell}");
+                });
+                mapTxt.AppendLine("");
+            });
+            return mapTxt.ToString();
+        }
     }
 
     public class MapCell
@@ -83,6 +97,10 @@ namespace OceanOfCode
         /// Permet d'obtenir la section de la position
         /// </summary>
         public int Section => this.ToSection();
+        /// <summary>
+        /// Détermine si la position est connu
+        /// </summary>
+        public bool Known => this.X != -1 && this.Y != -1;
         public override string ToString()
         {
             return $"{{{X}:{Y}}}";
@@ -124,13 +142,20 @@ namespace OceanOfCode
         };
 
         public List<Instruction> LastInstructions = new List<Instruction>();
+        public List<int> HealthPointHistoric { get; set; } = new List<int>();
 
         #region Helpers
+        #region Devices
         public Torpedo Torpedo => (Torpedo)Device(DeviceType.Torpedo);
         public Sonar Sonar => (Sonar)Device(DeviceType.Sonar);
         public Mine Mine => (Mine)Device(DeviceType.Mine);
         public Silence Silence => (Silence)Device(DeviceType.Silence);
         protected Device Device(DeviceType DeviceType) => Devices.First(d => d.DeviceType == DeviceType);
+        #endregion
+
+        public Instruction LastInstruction => LastInstructions.Count > 1 ? LastInstructions[LastInstructions.Count - 1] : new Instruction();
+        public bool Touched => HealthPointHistoric.Count > 2 && HealthPointHistoric[HealthPointHistoric.Count - 2] > HealthPointHistoric[HealthPointHistoric.Count - 1];
+        public bool TouchedPerfect => HealthPointHistoric.Count > 2 && HealthPointHistoric[HealthPointHistoric.Count - 2] - 2 == HealthPointHistoric[HealthPointHistoric.Count - 1];
 
         /// <summary>
         /// Défini si le joueur est le premier à jouer
@@ -147,10 +172,10 @@ namespace OceanOfCode
         /// <summary>
         /// La direction demandée
         /// </summary>
-        public Direction Direction { get; set; }
-        public DeviceType DeviceUsed { get; set; }
+        public Direction Direction { get; set; } = Direction.None;
+        public DeviceType DeviceUsed { get; set; } = DeviceType.None;
         public Position DeviceUsedPosition { get; set; }
-        public DeviceType DeviceLoad { get; set; }
+        public DeviceType DeviceLoad { get; set; } = DeviceType.None;
 
         public override string ToString()
         {
@@ -171,6 +196,7 @@ namespace OceanOfCode
         }
     }
 
+    #region Devices
     public abstract class Device
     {
         /// <summary>
@@ -262,6 +288,7 @@ namespace OceanOfCode
         }
     }
     #endregion
+    #endregion
 
     public class GameManager
     {
@@ -320,17 +347,46 @@ namespace OceanOfCode
         }
         public MapCell EmptyCell()
         {
-            var cells = Map.MapConfiguration.Select(row =>
+
+            // Todo
+            // Il est important de positionner le navire dans la plus grande étendu d'eau !
+
+            // On va récupérer les cellules par section
+            var dico = new Dictionary<int, List<MapCell>>();
+            Map.MapConfiguration.ForEach(column =>
             {
-                var cellule = row.First(c => c.CellType == CellType.Empty);
-                return cellule;
-            }).ToList();
-            return cells[0];
+                column.ForEach(c =>
+                {
+                    var sectionNumber = c.Position.Section;
+                    var isEmpty = c.CellType == CellType.Empty;
+
+                    if (!dico.ContainsKey(sectionNumber))
+                        dico.Add(sectionNumber, new List<MapCell>());
+
+                    if (isEmpty)
+                        dico[sectionNumber].Add(c);
+                });
+            });
+
+            int maxEmptyCell = 0;
+            int sectionToUse = 0;
+            foreach (var group in dico)
+            {
+                if (group.Value.Count >= maxEmptyCell)
+                {
+                    maxEmptyCell = group.Value.Count;
+                    sectionToUse = group.Key;
+                }
+            }
+
+            Console.Error.WriteLine($"Will use section: {sectionToUse} on -> {dico[sectionToUse][maxEmptyCell / 2]}");
+
+            return dico[sectionToUse][maxEmptyCell / 2];
         }
 
         #endregion
 
-        public bool CanDoAction(MapCell mapCell, Direction direction)
+        public bool CanDoAction(MapCell mapCell)
         {
             if (mapCell == null)
                 return false;
@@ -341,14 +397,9 @@ namespace OceanOfCode
             if (mapCell.CellType != CellType.Empty)
                 return false;
 
-            // Je suppose que si je peux y aller je vais y aller
-            // A modifier plus tard
-            Console.Error.WriteLine($"Position : {Me.Position} -> {direction.ToMove()} on {mapCell.CellType.ToText()}");
-            mapCell.Visited = true;
+
             return true;
         }
-
-
 
         #region Ctor & Initialization
         public GameManager()
@@ -361,20 +412,24 @@ namespace OceanOfCode
 
         public void InitializeMap()
         {
-            for (int x = 0; x < Map.Height; x++)
+            for (int y = 0; y < Map.Height; y++)
             {
-                var y = 0;
-                Map.MapConfiguration.Add(Helpers.ReadLine(debug: true).Select(c =>
+                var x = 0;
+                Map.MapConfiguration.Add(Helpers.ReadLine(debug: false).Select(c =>
                 {
                     var cell = new MapCell
                     {
                         Cell = c,
                         Position = new Position { X = x, Y = y }
                     };
-                    y++;
+                    x++;
                     return cell;
                 }).ToList());
             }
+
+            //Console.Error.WriteLine("--Map saved format--");
+            //Console.Error.WriteLine(Map.ToString());
+
 
             //On doit maintenant choisir sa position de départ
             var startCell = EmptyCell();
@@ -383,21 +438,28 @@ namespace OceanOfCode
 #if WriteDebug
             Console.Error.WriteLine($"Map initialized - start position {startCell.Position}");
 #endif
-            Console.WriteLine($"{startCell.Position.Y} {startCell.Position.X}");
+            Console.WriteLine($"{startCell.Position.X} {startCell.Position.Y}");
 
         }
         public void SetPlayersInformations()
         {
-            var inputs = Helpers.ReadLine().Split(' ');
+            #region Update
+            var inputs = Helpers.ReadLine(debug: false).Split(' ');
             Me.Position.X = int.Parse(inputs[0]);
             Me.Position.Y = int.Parse(inputs[1]);
 
             if (Counter > 0)
             {
                 // Non disponible au 1er tours
-                Me.HealthPoint = int.Parse(inputs[2]);
                 // Todo si l'enemie perds des points de vie c'est que (il s'est touché lui même ou que je lui ai tiré dessus)
-                Enemy.HealthPoint = int.Parse(inputs[3]);
+
+                var myHp = int.Parse(inputs[2]);
+                var enemyHp = int.Parse(inputs[3]);
+                Me.HealthPoint = myHp;
+                Me.HealthPointHistoric.Add(myHp);
+                Enemy.HealthPoint = enemyHp;
+                Enemy.HealthPointHistoric.Add(enemyHp);
+
             }
 
 
@@ -409,12 +471,31 @@ namespace OceanOfCode
                 Me.Mine.Couldown = int.Parse(inputs[7]);
             }
 
-            string sonarResult = Helpers.ReadLine();
-            string opponentOrders = Helpers.ReadLine();
+            string sonarResult = Helpers.ReadLine(debug: false);
+            string opponentOrders = Helpers.ReadLine(debug: false);
 
             // On enregistre le précédent déplacement
             if (opponentOrders != "NA")
                 Enemy.LastInstructions.Add(opponentOrders.ToInstructions());
+            #endregion
+
+            #region Logic
+            var enemyTornadoUsed = Enemy.LastInstruction.DeviceUsed == DeviceType.Torpedo;
+            var enemyTouchedMe = Me.Touched;
+            var enemyLostHp = Enemy.Touched;
+
+            if (enemyTornadoUsed && enemyTouchedMe && !enemyLostHp)
+                Console.Error.WriteLine($"Enemy touched me with perfect: {Me.TouchedPerfect}");
+            else if (enemyTornadoUsed && enemyTouchedMe && enemyLostHp)
+            {
+                var perfectEnemy = Enemy.TouchedPerfect;
+                // il est au même emplacement que moi
+                Console.Error.WriteLine($"Enemy touched me and he is close because he also loose hp");
+            }
+
+
+            #endregion
+
 
         }
         #endregion
@@ -467,16 +548,16 @@ namespace OceanOfCode
                     var action = Me.Torpedo.Use();
 
                     // faudra faire attention à l'ile
-                    //var isOutOfSouth = Me.Position.Y + 2 > Map.Height-1;
-                    //var isOutOfNorth = Me.Position.Y - 2 < 0 ;
-                    //var isOutOfEst = Me.Position.X + 2 > Map.Width - 1;
-                    //var isOutOfWest = Me.Position.X - 2 < 0;
-                    //var offsetY = isOutOfSouth ? -2 : +2;
-                    //var offsetX = isOutOfWest ? -2 : +2;
-                    var direction = lastEnemyMoves[lastEnemyMoves.Count - 1].Direction;
+                    var isOutOfSouth = Me.Position.Y + 2 > Map.Height - 1;
+                    var isOutOfNorth = Me.Position.Y - 2 < 0;
+                    var isOutOfEst = Me.Position.X + 2 > Map.Width - 1;
+                    var isOutOfWest = Me.Position.X - 2 < 0;
+                    var offsetY = isOutOfSouth ? -2 : +2;
+                    var offsetX = isOutOfWest ? -2 : +2;
 
-                    var offsetX = direction == Direction.West ? 2 : direction == Direction.Est ? -2 : 1;
-                    var offsetY = direction == Direction.South ? 2 : direction == Direction.North ? -2 : 1;
+                    //var direction = lastEnemyMoves[lastEnemyMoves.Count - 1].Direction;
+                    //var offsetX = direction == Direction.West ? 2 : direction == Direction.Est ? -2 : 1;
+                    //var offsetY = direction == Direction.South ? 2 : direction == Direction.North ? -2 : 1;
 
 
                     instruction.DeviceUsed = DeviceType.Torpedo;
@@ -486,37 +567,141 @@ namespace OceanOfCode
 
         }
 
+        #region Move
+
         /// <summary>
         /// Déplacer
         /// </summary>
         private void Move(Instruction instruction)
         {
+
+            if (!Enemy.Position.Known)
+            {
+                MoveRandom(instruction);
+            }
+            else
+            {
+
+            }
+
+
+
+        }
+
+        #region Move Logics
+        private void MoveRandom(Instruction instruction)
+        {
+            // A priori on ne connait pas la position de l'ennemi
+            // On va se déplacer en essayant de ne pas s'enfermer
+
             var direction = Direction.None;
             // On regarde les positions proches
+            //-------------
+            //   N
+            // W ME E
+            //   S
+            
             var west = MapCell(PlayerType.Me, Direction.West);
             var est = MapCell(PlayerType.Me, Direction.Est);
             var north = MapCell(PlayerType.Me, Direction.North);
             var south = MapCell(PlayerType.Me, Direction.South);
 
-            // on regarde les quels sont accessibles et pour le moment on prend la première
-            if (CanDoAction(west, Direction.West))
-                direction = Direction.West;
-            else if (CanDoAction(south, Direction.South))
-                direction = Direction.South;
-            else if (CanDoAction(est, Direction.Est))
-                direction = Direction.Est;
-            else if (CanDoAction(north, Direction.North))
-                direction = Direction.North;
-            else
+            var dico = new Dictionary<Direction, MapCell>
             {
-                direction = Direction.Surface;
-                ResetVisitedCell();
-                var currentPosition = Me.Position;
-                Map.MapConfiguration[currentPosition.Y][currentPosition.X].Visited = true;
+                { Direction.West, west },
+                { Direction.Est, est },
+                { Direction.North, north },
+                { Direction.South, south },
+            };
+
+
+            var canWest = CanDoAction(west);
+            var canEst = CanDoAction(est);
+            var canNorth = CanDoAction(north);
+            var canSouth = CanDoAction(south);
+
+            var section = Me.Position.Section;
+
+            //Console.Error.WriteLine($"{north?.Position}");
+            //Console.Error.WriteLine($"{west?.Position} {Me.Position} {est?.Position}");
+            //Console.Error.WriteLine($"{south?.Position}");
+
+            //Console.Error.WriteLine($"Section: {section} -> [S: {canSouth}, N: {canNorth}, E: {canEst}, W: {canWest}]");
+
+            switch (section)
+            {
+                case 1:
+                case 2:
+                case 3:
+                    // on est trop en haut
+                    if (canSouth)
+                        direction = Direction.South;
+
+                    else if (section == 1 && canEst)
+                        direction = Direction.Est;
+
+                    else if (section == 3 && canWest)
+                        direction = Direction.West;
+
+                    break;
+                case 4:
+                    if (canEst)
+                        direction = Direction.Est;
+                    else if (canSouth)
+                        direction = Direction.South;
+                    break;
+                case 6:
+                    if (canWest)
+                        direction = Direction.West;
+                    else if (canSouth)
+                        direction = Direction.South;
+                    break;
+
+                case 7:
+                case 8:
+                case 9:
+                    // on est trop en bas
+                    if (canNorth)
+                        direction = Direction.North;
+                    else if (section == 7 && canEst)
+                        direction = Direction.Est;
+                    else if (section == 9 && canWest)
+                        direction = Direction.West;
+                    break;
             }
+
+            if (direction == Direction.None)
+            {
+                Console.Error.WriteLine("No direction found");
+
+                if (canNorth)
+                    direction = Direction.North;
+                else if (canEst)
+                    direction = Direction.Est;
+                else if (canSouth)
+                    direction = Direction.South;
+                else if (canWest)
+                    direction = Direction.West;
+                else
+                {
+                    direction = Direction.Surface;
+                    ResetVisitedCell();
+                    var currentPosition = Me.Position;
+                    Map.MapConfiguration[currentPosition.Y][currentPosition.X].Visited = true;
+                }
+            }
+
+
+            // Je suppose que si je peux y aller je vais y aller
+            Console.Error.WriteLine($"P: {Me.Position} - S: {Me.Position.Section} -> {direction.ToMove()}");
+            if (dico.ContainsKey(direction))
+                dico[direction].Visited = true;
 
             instruction.Direction = direction;
         }
+        #endregion
+
+        #endregion
 
         /// <summary>
         /// Charger
@@ -531,8 +716,6 @@ namespace OceanOfCode
         }
 
     }
-
-
 
     #region Common
 
@@ -591,6 +774,11 @@ namespace OceanOfCode
 
     public static class PositionHelpers
     {
+        /// <summary>
+        /// Permet d'obtenir le niveau de section correspondant à une position
+        /// </summary>
+        /// <param name="position"></param>
+        /// <returns></returns>
         public static int ToSection(this Position position)
         {
             var section = 0;
@@ -602,11 +790,13 @@ namespace OceanOfCode
                 section = 3;
 
             if (position.Y <= 4)
-                section = 1;
+                section += 0;
             else if (position.Y <= 9)
                 section += 3;
             else
                 section += 6;
+
+            // Console.Error.WriteLine($"{position} is on section {section}");
 
             return section;
         }
@@ -632,12 +822,18 @@ namespace OceanOfCode
 
     public static class InstructionHelpers
     {
+        /// <summary>
+        /// Permet de comprendre l'ordre passer
+        /// </summary>
+        /// <param name="move"></param>
+        /// <returns></returns>
         public static Instruction ToInstructions(this string move)
         {
             // TORPEDO 0 5|MOVE N TORPEDO
             // MOVE N TORPEDO
             // MOVE E TORPEDO
             // TORPEDO 0 8|MOVE E TORPEDO
+            // MOVE E| TORPEDO 8 6
             var instruction = new Instruction();
             var input = move;
 
@@ -645,19 +841,22 @@ namespace OceanOfCode
             if (multiOrders)
             {
                 var inputs = move.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+                var startByMove = inputs[0].Contains("MOVE");
+
 
                 // Device
-                var attack = inputs[0].Split(' ');
+                var attack = inputs[startByMove ? 1 : 0].Split(' ');
                 //Console.Error.WriteLine(attack[0]);
                 var parsed = Enum.TryParse<DeviceType>(attack[0].ToPascalCase(), out var deviceType);
                 instruction.DeviceUsed = deviceType;
                 instruction.DeviceUsedPosition = new Position { Y = int.Parse(attack[1]), X = int.Parse(attack[2]) };
 
-                input = inputs[1];
+                input = inputs[startByMove ? 0 : 1];
             }
 
             var moveUsed = input.Substring(0, "MOVE E".Length);
-            switch (input)
+
+            switch (moveUsed)
             {
                 case "MOVE S": instruction.Direction = Direction.South; break;
                 case "MOVE N": instruction.Direction = Direction.North; break;
@@ -690,7 +889,7 @@ namespace OceanOfCode
             return "None";
         }
     }
-    
+
     public static class StringHelpers
     {
         public static string ToPascalCase(this string text)
