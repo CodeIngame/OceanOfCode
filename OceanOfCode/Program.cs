@@ -49,12 +49,15 @@ namespace OceanOfCode
         /// <summary>
         /// La configuration de la carte
         /// </summary>
-        public List<List<MapCell>> MapConfiguration { get; set; } = new List<List<MapCell>>();
+        public List<List<MapCell>> Maze2D { get; set; } = new List<List<MapCell>>();
+        public List<MapCell> Maze1D { get; set; } = new List<MapCell>();
 
+
+        public MapCell this[int x, int y] => Maze2D[y][x];
         public override string ToString()
         {
             var mapTxt = new StringBuilder();
-            MapConfiguration.ForEach(row =>
+            Maze2D.ForEach(row =>
             {
                 row.ForEach(c =>
                 {
@@ -114,6 +117,16 @@ namespace OceanOfCode
 
         public int XPrecision { get; set; } = 0;
         public int YPrecision { get; set; } = 0;
+
+        public EstimatedPosition()
+        {
+        }
+
+        public EstimatedPosition(Position p)
+        {
+            X = p.X;
+            Y = p.Y;
+        }
     }
 
     public class Player
@@ -132,6 +145,7 @@ namespace OceanOfCode
         /// La position du joueur
         /// </summary>
         public Position Position { get; set; } = new Position();
+        public EstimatedPosition LastEstimatedPosition => LastInstruction.EstimatedPosition;
 
         /// <summary>
         /// Le nombre de point de vie
@@ -185,6 +199,8 @@ namespace OceanOfCode
         public Position DeviceUsedPosition { get; set; }
         public DeviceType DeviceLoad { get; set; } = DeviceType.None;
 
+        public EstimatedPosition EstimatedPosition { get; set; } = new EstimatedPosition();
+
         public override string ToString()
         {
             return $"D: {DeviceUsed.ToText()} {DeviceUsedPosition} M: {Direction.ToMove()} L: {DeviceLoad.ToText()}";
@@ -229,7 +245,7 @@ namespace OceanOfCode
         public Torpedo()
         {
             DeviceType = DeviceType.Torpedo;
-            Range = 3;
+            Range = 4;
         }
 
         public override bool CanUse()
@@ -351,18 +367,18 @@ namespace OceanOfCode
             var height = _player.Position.Y + yOffset;
             var width = _player.Position.X + xOffset;
 
-            if (height < 0 || height > Map.Height -1)
+            if (height < 0 || height > Map.Height - 1)
                 return null;
 
             if (width < 0 || width > Map.Width - 1)
                 return null;
 
-            var cell = Map.MapConfiguration[_player.Position.Y + yOffset][_player.Position.X + xOffset];
+            var cell = Map[_player.Position.X + xOffset, _player.Position.Y + yOffset];
             return cell;
         }
         public void ResetVisitedCell()
         {
-            Map.MapConfiguration.ForEach(row =>
+            Map.Maze2D.ForEach(row =>
             {
                 row.ForEach(c => c.Visited = false);
             });
@@ -375,9 +391,9 @@ namespace OceanOfCode
 
             // On va récupérer les cellules par section
             var dico = new Dictionary<int, List<MapCell>>();
-            Map.MapConfiguration.ForEach(column =>
+            Map.Maze2D.ForEach(row =>
             {
-                column.ForEach(c =>
+                row.ForEach(c =>
                 {
                     var sectionNumber = c.Position.Section;
                     var isEmpty = c.CellType == CellType.Empty;
@@ -437,7 +453,7 @@ namespace OceanOfCode
             for (int y = 0; y < Map.Height; y++)
             {
                 var x = 0;
-                Map.MapConfiguration.Add(Helpers.ReadLine(debug: false).Select(c =>
+                Map.Maze2D.Add(Helpers.ReadLine(debug: false).Select(c =>
                 {
                     var cell = new MapCell
                     {
@@ -445,6 +461,8 @@ namespace OceanOfCode
                         Position = new Position { X = x, Y = y }
                     };
                     x++;
+
+                    Map.Maze1D.Add(cell);
                     return cell;
                 }).ToList());
             }
@@ -501,22 +519,7 @@ namespace OceanOfCode
                 Enemy.LastInstructions.Add(opponentOrders.ToInstructions());
             #endregion
 
-            #region Logic
-            var enemyTornadoUsed = Enemy.LastInstruction.DeviceUsed == DeviceType.Torpedo;
-            var enemyTouchedMe = Me.Touched;
-            var enemyLostHp = Enemy.Touched;
 
-            if (enemyTornadoUsed && enemyTouchedMe && !enemyLostHp)
-                Console.Error.WriteLine($"Enemy touched me with perfect: {Me.TouchedPerfect}");
-            else if (enemyTornadoUsed && enemyTouchedMe && enemyLostHp)
-            {
-                var perfectEnemy = Enemy.TouchedPerfect;
-                // il est au même emplacement que moi
-                Console.Error.WriteLine($"Enemy touched me and he is close because he also loose hp");
-            }
-
-
-            #endregion
 
 
         }
@@ -525,14 +528,15 @@ namespace OceanOfCode
         public void WritePosition()
         {
             Console.Error.WriteLine($"My position is :{Me.Position}");
-            Console.Error.WriteLine($"Enemy position is :{Enemy.Position}");
+            if (Enemy.Position.Known)
+                Console.Error.WriteLine($"Enemy position is :{Enemy.Position}");
         }
 
 
         public void Play()
         {
             var instruction = new Instruction();
-
+            Analyze(instruction);
             Move(instruction);
             UseDevice(instruction);
             LoadDevice(instruction);
@@ -543,6 +547,83 @@ namespace OceanOfCode
             Console.WriteLine(instruction.ToCommand());
 
         }
+
+        #region Analyze
+        /// <summary>
+        /// Permet d'analyser ce qui s'est passé sur le tour précédent
+        /// </summary>
+        /// <param name="instruction"></param>
+        private void Analyze(Instruction instruction)
+        {
+            AnalyseHit(instruction);
+            AnalyseToperdo(instruction);
+        }
+
+        #region Analyse Logics
+        private void AnalyseHit(Instruction instruction)
+        {
+            var enemyTornadoUsed = Enemy.LastInstruction.DeviceUsed == DeviceType.Torpedo;
+            var meTornadoUsed = Me.LastInstruction.DeviceUsed == DeviceType.Torpedo;
+
+            var enemyTouchedMe = Me.Touched;
+            var enemyLostHp = Enemy.Touched;
+
+            if (enemyTornadoUsed && enemyTouchedMe && !enemyLostHp)
+                Console.Error.WriteLine($"Enemy touched me with perfect: {Me.TouchedPerfect}");
+            //else if (enemyTornadoUsed && enemyTouchedMe && enemyLostHp)
+            //{
+            //    var perfectEnemy = Enemy.TouchedPerfect;
+            //    // il est au même emplacement que moi
+            //    Console.Error.WriteLine($"Enemy touched me and he is close because he also loose hp");
+            //}
+            else if(meTornadoUsed && enemyLostHp)
+            {
+                var shootPosition = Me.LastInstruction.DeviceUsedPosition;
+                var isPerfect = Enemy.TouchedPerfect;
+                if(isPerfect)
+                {
+                    Enemy.Position = shootPosition;
+                }
+                else
+                {
+                    //Enemy.LastInstructions[Enemy.LastInstructions.Count-1].EstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 1, YPrecision = 1 };
+                }
+
+            }
+        }
+
+        private void AnalyseToperdo(Instruction instruction)
+        {
+            var lastInstruction = Enemy.LastInstruction;
+            if (lastInstruction.DeviceUsed == DeviceType.Torpedo)
+            {
+                lastInstruction.EstimatedPosition = new EstimatedPosition(lastInstruction.DeviceUsedPosition);
+                lastInstruction.EstimatedPosition.XPrecision = Torpedo.Range;
+                lastInstruction.EstimatedPosition.YPrecision = Torpedo.Range;
+
+                Console.Error.WriteLine($"Enemy close to {lastInstruction.EstimatedPosition} - precision : {Torpedo.Range}");
+            }
+            else if(Enemy.LastInstructions.Count > 1)
+            {
+                //On regarde la position estimé du dernier coup
+                var previousInstruction = Enemy.LastInstructions[Enemy.LastInstructions.Count - 2];
+                if(previousInstruction.EstimatedPosition.Known)
+                {
+                    //On applique le déplacement du coup
+                    var lastDirection = lastInstruction.Direction;
+                    var newEstimatedPosition = new EstimatedPosition(previousInstruction.EstimatedPosition);
+                    newEstimatedPosition.X += lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
+                    newEstimatedPosition.Y += lastDirection == Direction.South ? 1 : lastDirection == Direction.North ? -1 : 0;
+                    // TODO il faudrait vérifier que l'emplacement est accessible (pas un bout d'île)
+                    lastInstruction.EstimatedPosition = newEstimatedPosition;
+                    Console.Error.WriteLine($"Enemy estimated postion updated to: {lastInstruction.EstimatedPosition}");
+                }
+            }
+        }
+        #endregion
+
+        #endregion
+
 
         /// <summary>
         /// Attaquer
@@ -605,14 +686,19 @@ namespace OceanOfCode
         private void Move(Instruction instruction)
         {
 
-            if (!Enemy.Position.Known)
-            {
-                MoveRandom(instruction);
-            }
-            else
+            if (Enemy.Position.Known)
             {
 
             }
+            else if (Enemy.LastEstimatedPosition.Known)
+            {
+                MoveToEstimatedPosition(instruction);
+            }
+            else
+            {
+                MoveRandom(instruction);
+            }
+
 
 
 
@@ -657,6 +743,7 @@ namespace OceanOfCode
             //Console.Error.WriteLine($"{south?.Position}");
 
             //Console.Error.WriteLine($"Section: {section} -> [S: {canSouth}, N: {canNorth}, E: {canEst}, W: {canWest}]");
+
 
             switch (section)
             {
@@ -717,7 +804,7 @@ namespace OceanOfCode
                     direction = Direction.Surface;
                     ResetVisitedCell();
                     var currentPosition = Me.Position;
-                    Map.MapConfiguration[currentPosition.Y][currentPosition.X].Visited = true;
+                    Map[currentPosition.X, currentPosition.Y].Visited = true;
                 }
             }
 
@@ -729,6 +816,82 @@ namespace OceanOfCode
 
             instruction.Direction = direction;
         }
+
+        private void MoveToEstimatedPosition(Instruction instruction)
+        {
+            // c'est moche ...
+            var distance = Me.Position.Distance(Enemy.LastEstimatedPosition);
+
+            var west = MapCell(PlayerType.Me, Direction.West);
+            var est = MapCell(PlayerType.Me, Direction.Est);
+            var north = MapCell(PlayerType.Me, Direction.North);
+            var south = MapCell(PlayerType.Me, Direction.South);
+
+            var canWest = CanDoAction(west);
+            var canEst = CanDoAction(est);
+            var canNorth = CanDoAction(north);
+            var canSouth = CanDoAction(south);
+
+            var dico = new Dictionary<Direction, MapCell>
+            {
+                { Direction.West, west },
+                { Direction.Est, est },
+                { Direction.North, north },
+                { Direction.South, south },
+            };
+
+            var direction = Direction.None;
+
+            if (Me.Position.X > Enemy.Position.X && canWest)
+            {
+                direction = Direction.West;
+            }
+            else if (Me.Position.X < Enemy.Position.X && canEst)
+            {
+                direction = Direction.Est;
+
+            }
+            else
+            {
+                Console.Error.WriteLine("We are on same x");
+                Enemy.LastEstimatedPosition.XPrecision = 0;
+            }
+
+            if (direction == Direction.None)
+            {
+                if (Me.Position.Y > Enemy.Position.Y && canNorth)
+                {
+                    direction = Direction.North;
+                }
+                else if (Me.Position.Y < Enemy.Position.Y && canSouth)
+                {
+                    direction = Direction.South;
+
+                }
+                else
+                {
+                    Console.Error.WriteLine("We are on same Y");
+                    Enemy.LastEstimatedPosition.YPrecision = 0;
+                }
+            }
+
+            if(direction == Direction.None)
+            {
+                Console.Error.WriteLine("Nothing found go random..");
+                MoveRandom(instruction);
+            } 
+            else
+            {
+                Console.Error.WriteLine($"/2\\ - P: {Me.Position} - S: {Me.Position.Section} -> {direction.ToMove()}");
+                if (dico.ContainsKey(direction))
+                    dico[direction].Visited = true;
+
+                instruction.Direction = direction;
+            }
+
+           
+
+        }
         #endregion
 
         #endregion
@@ -739,16 +902,11 @@ namespace OceanOfCode
         private void LoadDevice(Instruction instruction)
         {
 
-            if (instruction.DeviceUsed == DeviceType.None)
-            {
+            if (Me.Torpedo.Couldown > 0)
+                instruction.DeviceLoad = DeviceType.Torpedo;
 
-
-                if (Me.Torpedo.Couldown > 0)
-                    instruction.DeviceLoad = DeviceType.Torpedo;
-
-                //if (Me.Sonar.Couldown < 0)
-                //    actions += " SONAR";
-            }
+            //if (Me.Sonar.Couldown < 0)
+            //    actions += " SONAR";
 
         }
 
@@ -842,6 +1000,15 @@ namespace OceanOfCode
         {
             return Math.Abs(p1.X - p2.X) + Math.Abs(p1.Y - p2.Y);
         }
+
+        public static Direction DirectionToTake(this Position p1, Position p2, Map map)
+        {
+            var direction = Direction.None;
+
+
+
+            return direction;
+        }
     }
 
     public static class DirectionHelpers
@@ -891,7 +1058,7 @@ namespace OceanOfCode
                 //Console.Error.WriteLine(attack[0]);
                 var parsed = Enum.TryParse<DeviceType>(attack[0].ToPascalCase(), out var deviceType);
                 instruction.DeviceUsed = deviceType;
-                instruction.DeviceUsedPosition = new Position { Y = int.Parse(attack[1]), X = int.Parse(attack[2]) };
+                instruction.DeviceUsedPosition = new Position { X = int.Parse(attack[1]), Y = int.Parse(attack[2]) };
 
                 input = inputs[startByMove ? 0 : 1];
             }
