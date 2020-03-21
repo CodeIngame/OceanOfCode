@@ -348,6 +348,15 @@ namespace OceanOfCode
             if (_player.Position.Y == 0 && direction == Direction.North)
                 return null;
 
+            var height = _player.Position.Y + yOffset;
+            var width = _player.Position.X + xOffset;
+
+            if (height < 0 || height > 15)
+                return null;
+
+            if (width < 0 || width > 15)
+                return null;
+
             var cell = Map.MapConfiguration[_player.Position.Y + yOffset][_player.Position.X + xOffset];
             return cell;
         }
