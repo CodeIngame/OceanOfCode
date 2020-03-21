@@ -101,11 +101,19 @@ namespace OceanOfCode
         /// Détermine si la position est connu
         /// </summary>
         public bool Known => this.X != -1 && this.Y != -1;
+        public string Coordonate => $"{X} {Y}";
         public override string ToString()
         {
             return $"{{{X}:{Y}}}";
         }
+    }
 
+    public class EstimatedPosition
+        : Position
+    {
+
+        public int XPrecision { get; set; } = 0;
+        public int YPrecision { get; set; } = 0;
     }
 
     public class Player
@@ -184,11 +192,13 @@ namespace OceanOfCode
 
         public string ToCommand()
         {
-            var attack = DeviceUsed != DeviceType.None ? $"{DeviceUsed.ToText().ToUpper()} {DeviceUsedPosition.Y} {DeviceUsedPosition.X}|" : "";
+            var attack = DeviceUsed != DeviceType.None ? $"{DeviceUsed.ToText().ToUpper()} {DeviceUsedPosition.Coordonate}|" : "";
             var move = Direction.ToMove();
-            var load = $" {DeviceLoad.ToText().ToUpper()}";
+            var load = DeviceLoad != DeviceType.None ? $" {DeviceLoad.ToText().ToUpper()}" : "";
 
-            var command = $"{attack}{move}{load}";
+            var baseMove = $"{move}{load}";
+
+            var command = $"{attack}{baseMove}";
 #if WriteDebug
             Console.Error.WriteLine($"Command: {command}");
 #endif
@@ -203,6 +213,7 @@ namespace OceanOfCode
         /// Le type d'arme
         /// </summary>
         public DeviceType DeviceType { get; set; }
+        public static int Range { get; set; } = 0;
         /// <summary>
         /// Le temps à attendre avant réutilisation (disponibilité)
         /// </summary>
@@ -218,6 +229,7 @@ namespace OceanOfCode
         public Torpedo()
         {
             DeviceType = DeviceType.Torpedo;
+            Range = 3;
         }
 
         public override bool CanUse()
@@ -306,7 +318,7 @@ namespace OceanOfCode
         #endregion
 
         #region Map Methods
-        public MapCell MapCell(PlayerType playerType, Direction direction)
+        public MapCell MapCell(PlayerType playerType, Direction direction, int distance = 1)
         {
             Player _player;
             if (playerType == PlayerType.Me)
@@ -317,7 +329,8 @@ namespace OceanOfCode
             var xOffset = direction == Direction.West ? -1 : direction == Direction.Est ? 1 : 0;
             var yOffset = direction == Direction.North ? -1 : direction == Direction.South ? 1 : 0;
 
-
+            xOffset *= distance;
+            yOffset *= distance;
 
             // On veut aller à l'ouest mais on est déjà au maximun ...
             if (_player.Position.X == 0 && direction == Direction.West)
@@ -511,8 +524,8 @@ namespace OceanOfCode
         {
             var instruction = new Instruction();
 
-            UseDevice(instruction);
             Move(instruction);
+            UseDevice(instruction);
             LoadDevice(instruction);
 
             Me.LastInstructions.Add(instruction);
@@ -534,35 +547,43 @@ namespace OceanOfCode
             if (Me.Torpedo.CanUse())
             {
 
-#if WriteDebug
-                Console.Error.WriteLine($"I can use torpedo");
-#endif
+                var direction = instruction.Direction;
+                var cellToAttack = MapCell(PlayerType.Me, direction, Torpedo.Range);
 
-                var lastMoves = Me.LastInstructions.Skip(Me.LastInstructions.Count - 4).Take(3).ToList();
-                var lastEnemyMoves = Enemy.LastInstructions.Skip(Me.LastInstructions.Count - 4).Take(3).ToList();
-                if (lastMoves.SequenceEqual(lastEnemyMoves))
+                if (cellToAttack != null)
                 {
-#if WriteDebug
-                    Console.Error.WriteLine($"same scheme -> shoot him");
-#endif
-                    var action = Me.Torpedo.Use();
-
-                    // faudra faire attention à l'ile
-                    var isOutOfSouth = Me.Position.Y + 2 > Map.Height - 1;
-                    var isOutOfNorth = Me.Position.Y - 2 < 0;
-                    var isOutOfEst = Me.Position.X + 2 > Map.Width - 1;
-                    var isOutOfWest = Me.Position.X - 2 < 0;
-                    var offsetY = isOutOfSouth ? -2 : +2;
-                    var offsetX = isOutOfWest ? -2 : +2;
-
-                    //var direction = lastEnemyMoves[lastEnemyMoves.Count - 1].Direction;
-                    //var offsetX = direction == Direction.West ? 2 : direction == Direction.Est ? -2 : 1;
-                    //var offsetY = direction == Direction.South ? 2 : direction == Direction.North ? -2 : 1;
-
-
                     instruction.DeviceUsed = DeviceType.Torpedo;
-                    instruction.DeviceUsedPosition = new Position { Y = Me.Position.Y + offsetY, X = Me.Position.X + offsetX };
+                    instruction.DeviceUsedPosition = cellToAttack.Position;
+
+                    Console.Error.WriteLine($"Me: {Me.Position} shoot -> ${cellToAttack.Position}");
                 }
+
+
+                //                var lastMoves = Me.LastInstructions.Skip(Me.LastInstructions.Count - 4).Take(3).ToList();
+                //                var lastEnemyMoves = Enemy.LastInstructions.Skip(Me.LastInstructions.Count - 4).Take(3).ToList();
+                //                if (lastMoves.SequenceEqual(lastEnemyMoves))
+                //                {
+                //#if WriteDebug
+                //                    Console.Error.WriteLine($"same scheme -> shoot him");
+                //#endif
+                //                    var action = Me.Torpedo.Use();
+
+                //                    // faudra faire attention à l'ile
+                //                    var isOutOfSouth = Me.Position.Y + 2 > Map.Height - 1;
+                //                    var isOutOfNorth = Me.Position.Y - 2 < 0;
+                //                    var isOutOfEst = Me.Position.X + 2 > Map.Width - 1;
+                //                    var isOutOfWest = Me.Position.X - 2 < 0;
+                //                    var offsetY = isOutOfSouth ? -2 : +2;
+                //                    var offsetX = isOutOfWest ? -2 : +2;
+
+                //                    //var direction = lastEnemyMoves[lastEnemyMoves.Count - 1].Direction;
+                //                    //var offsetX = direction == Direction.West ? 2 : direction == Direction.Est ? -2 : 1;
+                //                    //var offsetY = direction == Direction.South ? 2 : direction == Direction.North ? -2 : 1;
+
+
+                //                    instruction.DeviceUsed = DeviceType.Torpedo;
+                //                    instruction.DeviceUsedPosition = new Position { Y = Me.Position.Y + offsetY, X = Me.Position.X + offsetX };
+                //                }
             }
 
         }
@@ -600,7 +621,7 @@ namespace OceanOfCode
             //   N
             // W ME E
             //   S
-            
+
             var west = MapCell(PlayerType.Me, Direction.West);
             var est = MapCell(PlayerType.Me, Direction.Est);
             var north = MapCell(PlayerType.Me, Direction.North);
@@ -708,11 +729,18 @@ namespace OceanOfCode
         /// </summary>
         private void LoadDevice(Instruction instruction)
         {
-            if (Me.Torpedo.Couldown > 0)
-                instruction.DeviceLoad = DeviceType.Torpedo;
 
-            //if (Me.Sonar.Couldown < 0)
-            //    actions += " SONAR";
+            if (instruction.DeviceUsed == DeviceType.None)
+            {
+
+
+                if (Me.Torpedo.Couldown > 0)
+                    instruction.DeviceLoad = DeviceType.Torpedo;
+
+                //if (Me.Sonar.Couldown < 0)
+                //    actions += " SONAR";
+            }
+
         }
 
     }
@@ -799,6 +827,11 @@ namespace OceanOfCode
             // Console.Error.WriteLine($"{position} is on section {section}");
 
             return section;
+        }
+
+        public static int Distance(this Position p1, Position p2)
+        {
+            return Math.Abs(p1.X - p2.X) + Math.Abs(p1.Y - p2.Y);
         }
     }
 
