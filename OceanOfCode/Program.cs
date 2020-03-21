@@ -16,10 +16,7 @@ namespace OceanOfCode
             var gameManager = new GameManager();
             gameManager.InitializeMap();
 
-
-            // Write an action using Console.WriteLine()
-            // To debug: Console.Error.WriteLine("Debug messages...");
-            Console.WriteLine("7 7");
+            // Console.WriteLine("7 7");
 
             // game loop
             while (true)
@@ -126,7 +123,7 @@ namespace OceanOfCode
             new Mine {  }
         };
 
-        public List<Direction> LastMoves = new List<Direction>();
+        public List<Instruction> LastInstructions = new List<Instruction>();
 
         #region Helpers
         public Torpedo Torpedo => (Torpedo)Device(DeviceType.Torpedo);
@@ -142,7 +139,36 @@ namespace OceanOfCode
         public bool ImOnTop => Position?.Y <= 7;
         public bool ImOnLeft => Position?.X <= 7;
         #endregion
+    }
 
+    public class Instruction
+    {
+        public string Command { get; set; }
+        /// <summary>
+        /// La direction demandée
+        /// </summary>
+        public Direction Direction { get; set; }
+        public DeviceType DeviceUsed { get; set; }
+        public Position DeviceUsedPosition { get; set; }
+        public DeviceType DeviceLoad { get; set; }
+
+        public override string ToString()
+        {
+            return $"D: {DeviceUsed.ToText()} {DeviceUsedPosition} M: {Direction.ToMove()} L: {DeviceLoad.ToText()}";
+        }
+
+        public string ToCommand()
+        {
+            var attack = DeviceUsed != DeviceType.None ? $"{DeviceUsed.ToText().ToUpper()} {DeviceUsedPosition.Y} {DeviceUsedPosition.X}|" : "";
+            var move = Direction.ToMove();
+            var load = $" {DeviceLoad.ToText().ToUpper()}";
+
+            var command = $"{attack}{move}{load}";
+#if WriteDebug
+            Console.Error.WriteLine($"Command: {command}");
+#endif
+            return command;
+        }
     }
 
     public abstract class Device
@@ -175,7 +201,7 @@ namespace OceanOfCode
 
         public override string Use()
         {
-            return "TORPEDO {0} {1}";
+            return "TORPEDO {0} {1}|";
         }
     }
 
@@ -247,9 +273,12 @@ namespace OceanOfCode
         /// </summary>
         public int Counter { get; set; } = 0;
 
+        #region Player Methods
         public Player Me => Players.First(p => p.PlayerType == PlayerType.Me);
         public Player Enemy => Players.First(p => p.PlayerType == PlayerType.Enemy);
+        #endregion
 
+        #region Map Methods
         public MapCell MapCell(PlayerType playerType, Direction direction)
         {
             Player _player;
@@ -261,7 +290,7 @@ namespace OceanOfCode
             var xOffset = direction == Direction.West ? -1 : direction == Direction.Est ? 1 : 0;
             var yOffset = direction == Direction.North ? -1 : direction == Direction.South ? 1 : 0;
 
-            
+
 
             // On veut aller à l'ouest mais on est déjà au maximun ...
             if (_player.Position.X == 0 && direction == Direction.West)
@@ -282,6 +311,25 @@ namespace OceanOfCode
             var cell = Map.MapConfiguration[_player.Position.Y + yOffset][_player.Position.X + xOffset];
             return cell;
         }
+        public void ResetVisitedCell()
+        {
+            Map.MapConfiguration.ForEach(row =>
+            {
+                row.ForEach(c => c.Visited = false);
+            });
+        }
+        public MapCell EmptyCell()
+        {
+            var cells = Map.MapConfiguration.Select(row =>
+            {
+                var cellule = row.First(c => c.CellType == CellType.Empty);
+                return cellule;
+            }).ToList();
+            return cells[0];
+        }
+
+        #endregion
+
         public bool CanDoAction(MapCell mapCell, Direction direction)
         {
             if (mapCell == null)
@@ -295,11 +343,12 @@ namespace OceanOfCode
 
             // Je suppose que si je peux y aller je vais y aller
             // A modifier plus tard
-            Console.Error.WriteLine($"current position : {Me.Position} - want to {direction.ToMove()}");
+            Console.Error.WriteLine($"Position : {Me.Position} -> {direction.ToMove()} on {mapCell.CellType.ToText()}");
             mapCell.Visited = true;
-            Me.LastMoves.Add(direction);
             return true;
         }
+
+
 
         #region Ctor & Initialization
         public GameManager()
@@ -315,7 +364,7 @@ namespace OceanOfCode
             for (int x = 0; x < Map.Height; x++)
             {
                 var y = 0;
-                Map.MapConfiguration.Add(Helpers.ReadLine(debug: false).Select(c =>
+                Map.MapConfiguration.Add(Helpers.ReadLine(debug: true).Select(c =>
                 {
                     var cell = new MapCell
                     {
@@ -327,9 +376,15 @@ namespace OceanOfCode
                 }).ToList());
             }
 
+            //On doit maintenant choisir sa position de départ
+            var startCell = EmptyCell();
+            startCell.Visited = true;
+
 #if WriteDebug
-            // Console.Error.WriteLine($"mapRow: {Map.MapConfiguration.Count}");
+            Console.Error.WriteLine($"Map initialized - start position {startCell.Position}");
 #endif
+            Console.WriteLine($"{startCell.Position.Y} {startCell.Position.X}");
+
         }
         public void SetPlayersInformations()
         {
@@ -341,6 +396,7 @@ namespace OceanOfCode
             {
                 // Non disponible au 1er tours
                 Me.HealthPoint = int.Parse(inputs[2]);
+                // Todo si l'enemie perds des points de vie c'est que (il s'est touché lui même ou que je lui ai tiré dessus)
                 Enemy.HealthPoint = int.Parse(inputs[3]);
             }
 
@@ -358,7 +414,7 @@ namespace OceanOfCode
 
             // On enregistre le précédent déplacement
             if (opponentOrders != "NA")
-                Enemy.LastMoves.Add(opponentOrders.ToDirection());
+                Enemy.LastInstructions.Add(opponentOrders.ToInstructions());
 
         }
         #endregion
@@ -372,22 +428,28 @@ namespace OceanOfCode
 
         public void Play()
         {
-            string actions = "";
+            var instruction = new Instruction();
 
-            UseDevice(ref actions);
-            Move(ref actions);
-            LoadDevice(ref actions);
+            UseDevice(instruction);
+            Move(instruction);
+            LoadDevice(instruction);
+
+            Me.LastInstructions.Add(instruction);
 
             Counter++;
-            Console.WriteLine(actions);
+            Console.WriteLine(instruction.ToCommand());
 
         }
 
         /// <summary>
         /// Attaquer
         /// </summary>
-        private void UseDevice(ref string actions)
+        private void UseDevice(Instruction instruction)
         {
+
+            // il faut tirer et regarder au prochain coups si on a touché quelque chose
+            // on combine le tout avec les derniers déplacement pour localiser la position de quelqu'un
+
             if (Me.Torpedo.CanUse())
             {
 
@@ -395,8 +457,8 @@ namespace OceanOfCode
                 Console.Error.WriteLine($"I can use torpedo");
 #endif
 
-                var lastMoves = Me.LastMoves.Skip(Me.LastMoves.Count - 4).Take(3).ToList();
-                var lastEnemyMoves = Enemy.LastMoves.Skip(Me.LastMoves.Count - 4).Take(3).ToList();
+                var lastMoves = Me.LastInstructions.Skip(Me.LastInstructions.Count - 4).Take(3).ToList();
+                var lastEnemyMoves = Enemy.LastInstructions.Skip(Me.LastInstructions.Count - 4).Take(3).ToList();
                 if (lastMoves.SequenceEqual(lastEnemyMoves))
                 {
 #if WriteDebug
@@ -405,17 +467,20 @@ namespace OceanOfCode
                     var action = Me.Torpedo.Use();
 
                     // faudra faire attention à l'ile
-                    var isOutOfSouth = Me.Position.Y + 2 > Map.Height-1;
-                    var isOutOfNorth = Me.Position.Y - 2 < 0 ;
-                    var isOutOfEst = Me.Position.X + 2 > Map.Width - 1;
-                    var isOutOfWest = Me.Position.X - 2 < 0;
+                    //var isOutOfSouth = Me.Position.Y + 2 > Map.Height-1;
+                    //var isOutOfNorth = Me.Position.Y - 2 < 0 ;
+                    //var isOutOfEst = Me.Position.X + 2 > Map.Width - 1;
+                    //var isOutOfWest = Me.Position.X - 2 < 0;
+                    //var offsetY = isOutOfSouth ? -2 : +2;
+                    //var offsetX = isOutOfWest ? -2 : +2;
+                    var direction = lastEnemyMoves[lastEnemyMoves.Count - 1].Direction;
 
-                    var offsetY = isOutOfSouth ? -2 : +2 ;
-                    var offsetX = isOutOfWest ? -2 : +2;
+                    var offsetX = direction == Direction.West ? 2 : direction == Direction.Est ? -2 : 1;
+                    var offsetY = direction == Direction.South ? 2 : direction == Direction.North ? -2 : 1;
 
 
-
-                    actions += string.Format($"{action}|", Me.Position.Y+offsetY, Me.Position.X+offsetX);
+                    instruction.DeviceUsed = DeviceType.Torpedo;
+                    instruction.DeviceUsedPosition = new Position { Y = Me.Position.Y + offsetY, X = Me.Position.X + offsetX };
                 }
             }
 
@@ -424,8 +489,9 @@ namespace OceanOfCode
         /// <summary>
         /// Déplacer
         /// </summary>
-        private void Move(ref string actions)
+        private void Move(Instruction instruction)
         {
+            var direction = Direction.None;
             // On regarde les positions proches
             var west = MapCell(PlayerType.Me, Direction.West);
             var est = MapCell(PlayerType.Me, Direction.Est);
@@ -434,32 +500,35 @@ namespace OceanOfCode
 
             // on regarde les quels sont accessibles et pour le moment on prend la première
             if (CanDoAction(west, Direction.West))
-                actions += Direction.West.ToMove();
-            else if (CanDoAction(est, Direction.Est))
-                actions += Direction.Est.ToMove();
-            else if (CanDoAction(north, Direction.North))
-                actions += Direction.North.ToMove();
+                direction = Direction.West;
             else if (CanDoAction(south, Direction.South))
-                actions += Direction.South.ToMove();
+                direction = Direction.South;
+            else if (CanDoAction(est, Direction.Est))
+                direction = Direction.Est;
+            else if (CanDoAction(north, Direction.North))
+                direction = Direction.North;
             else
             {
-                actions += "SURFACE";
+                direction = Direction.Surface;
+                ResetVisitedCell();
+                var currentPosition = Me.Position;
+                Map.MapConfiguration[currentPosition.Y][currentPosition.X].Visited = true;
             }
+
+            instruction.Direction = direction;
         }
 
         /// <summary>
         /// Charger
         /// </summary>
-        private void LoadDevice(ref string actions)
+        private void LoadDevice(Instruction instruction)
         {
             if (Me.Torpedo.Couldown > 0)
-                actions += " TORPEDO";
+                instruction.DeviceLoad = DeviceType.Torpedo;
 
             //if (Me.Sonar.Couldown < 0)
             //    actions += " SONAR";
         }
-
-
 
     }
 
@@ -492,7 +561,7 @@ namespace OceanOfCode
         }
     }
 
-    public static class CharHelpers
+    public static class CellTypeHelper
     {
         /// <summary>
         /// Permet de passer du caractère au type de cellule
@@ -507,6 +576,16 @@ namespace OceanOfCode
                 case '.': return CellType.Empty;
                 default: return CellType.Unknow;
             }
+        }
+        public static string ToText(this CellType cellType)
+        {
+            switch (cellType)
+            {
+
+                case CellType.Island: return "Island";
+                case CellType.Empty: return "Empty";
+            }
+            return "Unknow";
         }
     }
 
@@ -543,25 +622,83 @@ namespace OceanOfCode
                 case Direction.North: return "MOVE N";
                 case Direction.West: return "MOVE W";
                 case Direction.Est: return "MOVE E";
+
+                case Direction.Surface: return "SURFACE";
+
             }
             return null;
         }
+    }
 
-        public static Direction ToDirection(this string move)
+    public static class InstructionHelpers
+    {
+        public static Instruction ToInstructions(this string move)
         {
+            // TORPEDO 0 5|MOVE N TORPEDO
+            // MOVE N TORPEDO
+            // MOVE E TORPEDO
+            // TORPEDO 0 8|MOVE E TORPEDO
+            var instruction = new Instruction();
             var input = move;
-            var multiOrders = input.Contains("|");
-            if(multiOrders)
-                input = input.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries)[1];
 
+            var multiOrders = move.Contains("|");
+            if (multiOrders)
+            {
+                var inputs = move.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+
+                // Device
+                var attack = inputs[0].Split(' ');
+                //Console.Error.WriteLine(attack[0]);
+                var parsed = Enum.TryParse<DeviceType>(attack[0].ToPascalCase(), out var deviceType);
+                instruction.DeviceUsed = deviceType;
+                instruction.DeviceUsedPosition = new Position { Y = int.Parse(attack[1]), X = int.Parse(attack[2]) };
+
+                input = inputs[1];
+            }
+
+            var moveUsed = input.Substring(0, "MOVE E".Length);
             switch (input)
             {
-                case "MOVE S": return Direction.South;
-                case "MOVE N": return Direction.North;
-                case "MOVE W": return Direction.West;
-                case "MOVE E": return Direction.Est;
+                case "MOVE S": instruction.Direction = Direction.South; break;
+                case "MOVE N": instruction.Direction = Direction.North; break;
+                case "MOVE W": instruction.Direction = Direction.West; break;
+                case "MOVE E": instruction.Direction = Direction.Est; break;
             }
-            return Direction.None;
+
+            var loadedDevice = input.Substring(moveUsed.Length);
+            var parsedLoad = Enum.TryParse<DeviceType>(loadedDevice.ToPascalCase(), out var deviceTypeLoaded);
+            instruction.DeviceLoad = deviceTypeLoaded;
+
+            Console.Error.WriteLine($"Instruction decrypted: {instruction}");
+
+            return instruction;
+
+        }
+    }
+
+    public static class DeviceTypeHelpers
+    {
+        public static string ToText(this DeviceType deviceType)
+        {
+            switch (deviceType)
+            {
+                case DeviceType.Torpedo: return "Torpedo";
+                case DeviceType.Sonar: return "Sonar";
+                case DeviceType.Silence: return "Silence";
+                case DeviceType.Mine: return "Mine";
+            }
+            return "None";
+        }
+    }
+    
+    public static class StringHelpers
+    {
+        public static string ToPascalCase(this string text)
+        {
+            if (text == null || text.Length < 2)
+                return text;
+
+            return text.Substring(0, 1).ToUpper() + text.Substring(1).ToLower();
         }
     }
     #endregion
@@ -596,7 +733,8 @@ namespace OceanOfCode
         West = 1,
         Est = 2,
         North = 3,
-        South = 4
+        South = 4,
+        Surface = 99
     }
     #endregion
 
