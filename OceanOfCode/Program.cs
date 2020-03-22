@@ -42,7 +42,6 @@ namespace OceanOfCode
         /// La configuration de la carte
         /// </summary>
         public List<List<MapCell>> Maze2D { get; set; } = new List<List<MapCell>>();
-        public List<MapCell> Maze1D { get; set; } = new List<MapCell>();
 
 
         public MapCell this[int x, int y] => Maze2D[y][x];
@@ -108,6 +107,17 @@ namespace OceanOfCode
         /// La distance entre ce point et la cible
         /// </summary>
         public int H { get; set; }
+
+        public Position()
+        {
+
+        }
+
+        public Position(Position p)
+        {
+            X = p.X;
+            Y = p.Y;
+        }
 
         /// <summary>
         /// Permet d'obtenir la section de la position
@@ -420,11 +430,18 @@ namespace OceanOfCode
             var cell = Map[_player.Position.X + xOffset, _player.Position.Y + yOffset];
             return cell;
         }
-        public void ResetVisitedCell()
+        public void ResetVisitedCells()
         {
             Map.Maze2D.ForEach(row =>
             {
-                row.ForEach(c => c.Visited = false);
+                row.ForEach(c => {
+                    c.Visited = false;
+                    c.Parent = null;
+                    c.Position.F = 0;
+                    c.Position.G = 0;
+                    c.Position.H = 0;
+                }
+                );
             });
         }
         public MapCell EmptyCell()
@@ -478,9 +495,6 @@ namespace OceanOfCode
         public bool CanSouth => CanDoAction(South());
 
         #endregion
-        #endregion
-
-
         public bool CanDoAction(MapCell mapCell)
         {
             if (mapCell == null)
@@ -495,6 +509,9 @@ namespace OceanOfCode
 
             return true;
         }
+
+        #endregion
+
 
         #region Ctor & Initialization
         public GameManager()
@@ -519,7 +536,6 @@ namespace OceanOfCode
                     };
                     x++;
 
-                    Map.Maze1D.Add(cell);
                     return cell;
                 }).ToList());
             }
@@ -585,10 +601,10 @@ namespace OceanOfCode
         public void WritePosition()
         {
             // Console.Error.WriteLine($"My position is :{Me.Position}");
-            if (Enemy.Position.Known)
-                Console.Error.WriteLine($"Enemy position is :{Enemy.Position}");
-            if (!Enemy.Position.Known && Enemy.LastEstimatedPosition.Known)
-                Console.Error.WriteLine($"Enemy position is :{Enemy.LastEstimatedPosition}");
+            //if (Enemy.Position.Known)
+            //    Console.Error.WriteLine($"Enemy position is :{Enemy.Position}");
+            //if (!Enemy.Position.Known && Enemy.LastEstimatedPosition.Known)
+            //    Console.Error.WriteLine($"Enemy position is :{Enemy.LastEstimatedPosition}");
         }
 
 
@@ -616,8 +632,8 @@ namespace OceanOfCode
         {
             if (Counter > 1)
             {
-                AnalyseHit(instruction);
                 AnalyseToperdo(instruction);
+                AnalyseHit(instruction);
                 AnalyseMove(instruction);
             }
 
@@ -630,8 +646,11 @@ namespace OceanOfCode
             var iUsedTorpedo = Me.LastInstruction.DeviceUsed == DeviceType.Torpedo;
 
             var enemyLostHp = Enemy.Touched;
+            var iLostHp = Me.Touched;
             var enemyTouchedPerfect = Enemy.TouchedPerfect;
 
+            if (Enemy.Position.Known)
+                return;
 
             if (iUsedTorpedo && !enemyUsedToperdo && enemyLostHp)
             {
@@ -691,14 +710,35 @@ namespace OceanOfCode
                     Console.Error.WriteLine($"Auto kill, he is close to ({shootPosition})");
                     Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 1, YPrecision = 1 };
                 }
+            } 
+            else if(enemyUsedToperdo && !enemyLostHp && !iLostHp)
+            {
+                
+                var lastDirection = Enemy.LastInstruction.Direction;
+                var lastEstimatedPosition = Enemy.LastEstimatedPosition;
+
+                var yOffset = lastDirection == Direction.North ? +3 : lastDirection == Direction.South ? -3 : 0;
+                var xOffset = lastDirection == Direction.Est ? +3 : lastDirection == Direction.West ? -3 : 0;
+
+                var newEstimatedPosition = new EstimatedPosition { X = lastEstimatedPosition.X + xOffset, Y = lastEstimatedPosition.Y + yOffset };
+                if (newEstimatedPosition.IsValidPosition(Map))
+                {
+                    Console.Error.WriteLine($"Random shoot - position updated to: {newEstimatedPosition}");
+                    Enemy.LastEstimatedPosition = newEstimatedPosition;
+
+                }
+
+
+
             }
-
-
 
         }
 
         private void AnalyseToperdo(Instruction instruction)
         {
+            if (Enemy.Position.Known)
+                return;
+
             var shouldAnalyse = true;
             if (Enemy.LastInstructions.Count > 1)
             {
@@ -757,17 +797,25 @@ namespace OceanOfCode
 
             if (Enemy.Position.Known)
             {
+                // Console.Error.WriteLine("Track move !");
+
                 var lastDirection = lastInstruction.Direction;
                 var xOffset = lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
                 var yOffset = lastDirection == Direction.South ? 1 : lastDirection == Direction.North ? -1 : 0;
 
-                if (Enemy.Position.IsValidPosition(Map, xOffset, yOffset))
+                var newEnemyPosition = new Position(Enemy.Position);
+
+                // Console.Error.WriteLine($"Tracked position {newEnemyPosition} + x: {xOffset}, + y: {yOffset}");
+
+
+                if (newEnemyPosition.IsValidPosition(Map, yOffset, xOffset))
                 {
+                    Console.Error.Write($"Enemy Position : {Enemy.Position} ->");
                     Enemy.Position.X += xOffset;
                     Enemy.Position.Y += yOffset;
-                }
+                    Console.Error.WriteLine($" {Enemy.Position}");
 
-                Console.Error.WriteLine($"Enemy Position updated to: {Enemy.Position}");
+                }
             }
         }
         #endregion
@@ -793,7 +841,7 @@ namespace OceanOfCode
                     if (distance <= Torpedo.Range)
                         cellToAttack = Map[Enemy.Position];
 
-                    Console.Error.WriteLine("[A] Position know - distance:{distance}");
+                    Console.Error.WriteLine($"[A] Position know - distance:{distance}");
                 }
                 else if (Enemy.LastEstimatedPosition.Known)
                 {
@@ -847,20 +895,36 @@ namespace OceanOfCode
                 { Direction.North, North() },
                 { Direction.South, South() },
             };
-            var distance = Me.Position.Distance(Enemy.Position);
+            var distance =  Me.Position.Distance(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition);
+
 
             if (Enemy.Position.Known)
             {
-                if (distance < 2)
+                Console.Error.WriteLine($"PEnemy: {Enemy.Position} - distance: {distance}");
+
+                if (distance >= 3)
                     MoveToPosition(instruction, dico, Enemy.Position);
                 else
-                    MoveToPosition(instruction, dico, new Position { X = 7, Y = 7 });
+                {
+                    // On va tenter un déplacement au centre de la section courante
+                    var section = Me.Position.Section;
+                    MoveToPosition(instruction, dico, section.ToMidleSectionPosition());
+
+                }
 
             }
             else if (Enemy.LastEstimatedPosition.Known)
             {
-                Console.Error.WriteLine("Move to estimated enemy");
-                MoveToPosition(instruction, dico, Enemy.LastEstimatedPosition);
+                Console.Error.WriteLine($"P Estimated Enemy: {Enemy.LastEstimatedPosition} - distance: {distance}");
+                if (distance >= 3)
+                    MoveToPosition(instruction, dico, Enemy.LastEstimatedPosition);
+                else
+                {
+                    // On va tenter un déplacement au centre de la section courante
+                    var section = Me.Position.Section;
+                    MoveToPosition(instruction, dico, section.ToMidleSectionPosition());
+
+                }
             }
             else
             {
@@ -875,8 +939,10 @@ namespace OceanOfCode
             var _targetedPosition = targetPosition;
             var myPosition = Me.Position;
 
-            if (myPosition == _targetedPosition)
+            // Si on est déjà sur la cible ou si la cible est inatteignable
+            if (myPosition == _targetedPosition || !Map[targetPosition].CanGoHere)
             {
+                Console.Error.WriteLine(!Map[targetPosition].CanGoHere ? $"{targetPosition} not accessible" : "I'm still at this position");
                 MoveRandom(instruction, dico);
             }
             else
@@ -893,7 +959,11 @@ namespace OceanOfCode
                 }
                 else
                 {
-                    Console.Error.WriteLine("What happened ?");
+                    Console.Error.WriteLine("No move -> Surface");
+                    instruction.Direction = Direction.Surface;
+                    ResetVisitedCells();
+                    Map[myPosition].Visited = true;
+                    // MoveRandom(instruction, dico);
                 }
             }
         }
@@ -976,7 +1046,7 @@ namespace OceanOfCode
                 else
                 {
                     direction = Direction.Surface;
-                    ResetVisitedCell();
+                    ResetVisitedCells();
                     Map[Me.Position].Visited = true;
                 }
             }
@@ -1125,16 +1195,22 @@ namespace OceanOfCode
 
         public static bool IsValidPosition(this Position p1, Map map, int yOffset = 0, int xOffset = 0)
         {
+            var isValid = true;
             var height = p1.Y + yOffset;
             var width = p1.X + xOffset;
 
             if (height < 0 || height > map.Height - 1)
-                return false;
+                isValid = false;
 
-            if (width < 0 || width > map.Width - 1)
-                return false;
+            if (isValid && ( width < 0 || width > map.Width - 1))
+                isValid = false;
 
-            return true;
+            if (isValid && map[p1.X + xOffset, p1.Y + yOffset].CellType == CellType.Island)
+                isValid = false;
+
+            // Console.Error.WriteLine($"{p1} is valid position ? {isValid}  ({height}, {width})");
+
+            return isValid;
         }
     }
 
@@ -1241,11 +1317,23 @@ namespace OceanOfCode
     {
         public static List<MapCell> FindPath(this Position start, Position end, Map map)
         {
+            // reset de la précédante 
+            map.Maze2D.ForEach(row =>
+            {
+                row.ForEach(c => {
+                    c.Parent = null;
+                    c.Position.F = 0;
+                    c.Position.G = 0;
+                    c.Position.H = 0;
+
+                });
+            });
+
             MapCell current = null;
             var openList = new List<MapCell>();
             var closedList = new List<MapCell>();
             int g = 0;
-            Console.Error.WriteLine($"Path finding with start: {start}");
+            Console.Error.WriteLine($"Path finding with start:{start} - target:{end}");
             openList.Add(map[start]);
             while (openList.Count > 0)
             {
@@ -1346,6 +1434,26 @@ namespace OceanOfCode
             }
 
             return list;
+        }
+    }
+
+    public static class SectionHelper
+    {
+        public static Position ToMidleSectionPosition(this int section)
+        {
+            switch (section)
+            {
+                case 1: return new Position { X = 2, Y = 2 };
+                case 2: return new Position { X = 7, Y = 2 };
+                case 3: return new Position { X = 12, Y = 2 };
+                case 4: return new Position { X = 2, Y = 7 };
+                case 5: return new Position { X = 7, Y = 7 };
+                case 6: return new Position { X = 12, Y = 7 };
+                case 7: return new Position { X = 2, Y = 12 };
+                case 8: return new Position { X = 7, Y = 12 };
+                case 9: return new Position { X = 12, Y = 12 };
+            }
+            return null;
         }
     }
 
