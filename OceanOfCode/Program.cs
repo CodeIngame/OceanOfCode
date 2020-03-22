@@ -16,20 +16,12 @@ namespace OceanOfCode
             var gameManager = new GameManager();
             gameManager.InitializeMap();
 
-            // Console.WriteLine("7 7");
-
             // game loop
             while (true)
             {
                 gameManager.SetPlayersInformations();
                 gameManager.WritePosition();
                 gameManager.Play();
-
-                // Write an action using Console.WriteLine()
-                // To debug: Console.Error.WriteLine("Debug messages...");
-
-
-                //Console.WriteLine("MOVE N TORPEDO");
             }
         }
     }
@@ -50,7 +42,6 @@ namespace OceanOfCode
         /// La configuration de la carte
         /// </summary>
         public List<List<MapCell>> Maze2D { get; set; } = new List<List<MapCell>>();
-        public List<MapCell> Maze1D { get; set; } = new List<MapCell>();
 
 
         public MapCell this[int x, int y] => Maze2D[y][x];
@@ -83,6 +74,12 @@ namespace OceanOfCode
         public char Cell { get; set; }
 
         /// <summary>
+        /// Pour la recherche de chemin il faut un parent
+        /// </summary>
+        public MapCell Parent { get; set; }
+
+        public bool CanGoHere => !Visited && CellType == CellType.Empty;
+        /// <summary>
         /// On ne doit pas se déplacer sur une cellule qu'on a déjà visité
         /// Sauf dans le cas où on refait surface
         /// </summary>
@@ -99,6 +96,30 @@ namespace OceanOfCode
         public int Y { get; set; } = -1;
 
         /// <summary>
+        /// La somme de g + h
+        /// </summary>
+        public int F { get; set; }
+        /// <summary>
+        /// La distance entre ce point et le début
+        /// </summary>
+        public int G { get; set; }
+        /// <summary>
+        /// La distance entre ce point et la cible
+        /// </summary>
+        public int H { get; set; }
+
+        public Position()
+        {
+
+        }
+
+        public Position(Position p)
+        {
+            X = p.X;
+            Y = p.Y;
+        }
+
+        /// <summary>
         /// Permet d'obtenir la section de la position
         /// </summary>
         public int Section => this.ToSection();
@@ -111,6 +132,33 @@ namespace OceanOfCode
         {
             return $"{{{X}:{Y}}}";
         }
+
+        #region Operators
+        public override bool Equals(object obj)
+        {
+            Position p2 = obj as Position;
+            if (p2 == null)
+                return false;
+
+            return X == p2.X && Y == p2.Y;
+        }
+
+        public static bool operator ==(Position a, Position b)
+        {
+            return a.X.Equals(b?.X) && a.Y.Equals(b?.Y);
+        }
+
+        public static bool operator !=(Position a, Position b)
+        {
+            return !a.X.Equals(b?.X) || !a.Y.Equals(b?.Y);
+        }
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+        #endregion
+
     }
 
     public class EstimatedPosition
@@ -195,8 +243,6 @@ namespace OceanOfCode
         /// Défini si le joueur est le premier à jouer
         /// </summary>
         public bool First => PlayerId == 0;
-        public bool ImOnTop => Position?.Y <= 7;
-        public bool ImOnLeft => Position?.X <= 7;
         #endregion
     }
 
@@ -384,11 +430,18 @@ namespace OceanOfCode
             var cell = Map[_player.Position.X + xOffset, _player.Position.Y + yOffset];
             return cell;
         }
-        public void ResetVisitedCell()
+        public void ResetVisitedCells()
         {
             Map.Maze2D.ForEach(row =>
             {
-                row.ForEach(c => c.Visited = false);
+                row.ForEach(c => {
+                    c.Visited = false;
+                    c.Parent = null;
+                    c.Position.F = 0;
+                    c.Position.G = 0;
+                    c.Position.H = 0;
+                }
+                );
             });
         }
         public MapCell EmptyCell()
@@ -442,9 +495,6 @@ namespace OceanOfCode
         public bool CanSouth => CanDoAction(South());
 
         #endregion
-        #endregion
-
-
         public bool CanDoAction(MapCell mapCell)
         {
             if (mapCell == null)
@@ -459,6 +509,9 @@ namespace OceanOfCode
 
             return true;
         }
+
+        #endregion
+
 
         #region Ctor & Initialization
         public GameManager()
@@ -483,7 +536,6 @@ namespace OceanOfCode
                     };
                     x++;
 
-                    Map.Maze1D.Add(cell);
                     return cell;
                 }).ToList());
             }
@@ -549,10 +601,10 @@ namespace OceanOfCode
         public void WritePosition()
         {
             // Console.Error.WriteLine($"My position is :{Me.Position}");
-            if (Enemy.Position.Known)
-                Console.Error.WriteLine($"Enemy position is :{Enemy.Position}");
-            if (!Enemy.Position.Known && Enemy.LastEstimatedPosition.Known)
-                Console.Error.WriteLine($"Enemy position is :{Enemy.LastEstimatedPosition}");
+            //if (Enemy.Position.Known)
+            //    Console.Error.WriteLine($"Enemy position is :{Enemy.Position}");
+            //if (!Enemy.Position.Known && Enemy.LastEstimatedPosition.Known)
+            //    Console.Error.WriteLine($"Enemy position is :{Enemy.LastEstimatedPosition}");
         }
 
 
@@ -580,8 +632,8 @@ namespace OceanOfCode
         {
             if (Counter > 1)
             {
-                AnalyseHit(instruction);
                 AnalyseToperdo(instruction);
+                AnalyseHit(instruction);
                 AnalyseMove(instruction);
             }
 
@@ -594,8 +646,11 @@ namespace OceanOfCode
             var iUsedTorpedo = Me.LastInstruction.DeviceUsed == DeviceType.Torpedo;
 
             var enemyLostHp = Enemy.Touched;
+            var iLostHp = Me.Touched;
             var enemyTouchedPerfect = Enemy.TouchedPerfect;
 
+            if (Enemy.Position.Known)
+                return;
 
             if (iUsedTorpedo && !enemyUsedToperdo && enemyLostHp)
             {
@@ -655,14 +710,35 @@ namespace OceanOfCode
                     Console.Error.WriteLine($"Auto kill, he is close to ({shootPosition})");
                     Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 1, YPrecision = 1 };
                 }
+            } 
+            else if(enemyUsedToperdo && !enemyLostHp && !iLostHp)
+            {
+                
+                var lastDirection = Enemy.LastInstruction.Direction;
+                var lastEstimatedPosition = Enemy.LastEstimatedPosition;
+
+                var yOffset = lastDirection == Direction.North ? +3 : lastDirection == Direction.South ? -3 : 0;
+                var xOffset = lastDirection == Direction.Est ? +3 : lastDirection == Direction.West ? -3 : 0;
+
+                var newEstimatedPosition = new EstimatedPosition { X = lastEstimatedPosition.X + xOffset, Y = lastEstimatedPosition.Y + yOffset };
+                if (newEstimatedPosition.IsValidPosition(Map))
+                {
+                    Console.Error.WriteLine($"Random shoot - position updated to: {newEstimatedPosition}");
+                    Enemy.LastEstimatedPosition = newEstimatedPosition;
+
+                }
+
+
+
             }
-
-
 
         }
 
         private void AnalyseToperdo(Instruction instruction)
         {
+            if (Enemy.Position.Known)
+                return;
+
             var shouldAnalyse = true;
             if (Enemy.LastInstructions.Count > 1)
             {
@@ -721,17 +797,25 @@ namespace OceanOfCode
 
             if (Enemy.Position.Known)
             {
+                // Console.Error.WriteLine("Track move !");
+
                 var lastDirection = lastInstruction.Direction;
                 var xOffset = lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
                 var yOffset = lastDirection == Direction.South ? 1 : lastDirection == Direction.North ? -1 : 0;
 
-                if (Enemy.Position.IsValidPosition(Map, xOffset, yOffset))
+                var newEnemyPosition = new Position(Enemy.Position);
+
+                // Console.Error.WriteLine($"Tracked position {newEnemyPosition} + x: {xOffset}, + y: {yOffset}");
+
+
+                if (newEnemyPosition.IsValidPosition(Map, yOffset, xOffset))
                 {
+                    Console.Error.Write($"Enemy Position : {Enemy.Position} ->");
                     Enemy.Position.X += xOffset;
                     Enemy.Position.Y += yOffset;
-                }
+                    Console.Error.WriteLine($" {Enemy.Position}");
 
-                Console.Error.WriteLine($"Enemy Position updated to: {Enemy.Position}");
+                }
             }
         }
         #endregion
@@ -750,7 +834,6 @@ namespace OceanOfCode
 
             if (Me.Torpedo.CanUse())
             {
-                Direction direction;
                 MapCell cellToAttack = null;
                 if (Enemy.Position.Known)
                 {
@@ -758,7 +841,7 @@ namespace OceanOfCode
                     if (distance <= Torpedo.Range)
                         cellToAttack = Map[Enemy.Position];
 
-                    Console.Error.WriteLine("[A] Position know");
+                    Console.Error.WriteLine($"[A] Position know - distance:{distance}");
                 }
                 else if (Enemy.LastEstimatedPosition.Known)
                 {
@@ -766,32 +849,19 @@ namespace OceanOfCode
                     if (distance <= Torpedo.Range)
                         cellToAttack = Map[Enemy.LastEstimatedPosition];
 
-                    //if (distance > Torpedo.Range -1 && distance <= Torpedo.Range)
-                    //    cellToAttack = Map[Enemy.LastEstimatedPosition];
-                    //else if(distance <= Torpedo.Range)
-                    //{
-                    //    var editPosition = new EstimatedPosition(Enemy.LastEstimatedPosition);
-                    //    editPosition.X += 1;
-                    //    editPosition.Y += 1;
-
-                    //    cellToAttack = Map[editPosition];
-
-                    //}
-
-                    Console.Error.WriteLine("[A] Estimated Position know");
+                    Console.Error.WriteLine($"[A] Estimated Position know - distance:{distance}");
 
                 }
                 else
                 {
-                    direction = instruction.Direction;
-                    cellToAttack = MapCell(PlayerType.Me, direction, Torpedo.Range);
-                    Console.Error.WriteLine("[A] Random shoot");
-
+                    //direction = instruction.Direction;
+                    //cellToAttack = MapCell(PlayerType.Me, direction, Torpedo.Range);
+                    //Console.Error.WriteLine("[A] Random shoot");
                 }
 
 
                 // On se se tire pas dessus !
-                if (cellToAttack?.Position == Me.Position)
+                if (cellToAttack != null && cellToAttack.Position == Me.Position && Me.HealthPoint < Enemy.HealthPoint)
                 {
                     cellToAttack = null;
                     Console.Error.WriteLine("[A] Canceled shoot");
@@ -818,18 +888,6 @@ namespace OceanOfCode
         private void Move(Instruction instruction)
         {
 
-            var enemyPositionKnow = Enemy.Position.Known;
-            var enemyPosition = Enemy.Position;
-            var enemyEstimatedPositionKnow = Enemy.LastEstimatedPosition.Known;
-            var enemyEstimatedPosition = Enemy.LastEstimatedPosition;
-
-            if (enemyPositionKnow)
-                Console.Error.WriteLine($"Before move : enemyPositionKnown: {enemyPositionKnow} - {enemyPosition}");
-
-            if (!enemyPositionKnow && enemyEstimatedPositionKnow)
-                Console.Error.WriteLine($"Before move : enemyEstimatedPositionKnow: {enemyEstimatedPositionKnow} - {enemyEstimatedPosition}");
-
-
             var dico = new Dictionary<Direction, MapCell>
             {
                 { Direction.West, West() },
@@ -837,56 +895,81 @@ namespace OceanOfCode
                 { Direction.North, North() },
                 { Direction.South, South() },
             };
+            var distance =  Me.Position.Distance(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition);
+
 
             if (Enemy.Position.Known)
             {
-                MoveAndStayClose(instruction, dico);
+                Console.Error.WriteLine($"PEnemy: {Enemy.Position} - distance: {distance}");
+
+                if (distance >= 3)
+                    MoveToPosition(instruction, dico, Enemy.Position);
+                else
+                {
+                    // On va tenter un déplacement au centre de la section courante
+                    var section = Me.Position.Section;
+                    MoveToPosition(instruction, dico, section.ToMidleSectionPosition());
+
+                }
+
             }
             else if (Enemy.LastEstimatedPosition.Known)
             {
-                MoveToEstimatedPosition(instruction, dico, PositionToTake.Estimated);
+                Console.Error.WriteLine($"P Estimated Enemy: {Enemy.LastEstimatedPosition} - distance: {distance}");
+                if (distance >= 3)
+                    MoveToPosition(instruction, dico, Enemy.LastEstimatedPosition);
+                else
+                {
+                    // On va tenter un déplacement au centre de la section courante
+                    var section = Me.Position.Section;
+                    MoveToPosition(instruction, dico, section.ToMidleSectionPosition());
+
+                }
             }
             else
             {
-                MoveToCenter(instruction, dico);
+                MoveToPosition(instruction, dico, new Position { X = 7, Y = 7 });
             }
-
-
-
 
         }
 
         #region Move Logics
-        private void MoveToCenter(Instruction instruction, Dictionary<Direction, MapCell> dico)
+        private void MoveToPosition(Instruction instruction, Dictionary<Direction, MapCell> dico, Position targetPosition)
         {
-            // Console.Error.WriteLine("MoveRandom");
-
-
+            var _targetedPosition = targetPosition;
             var myPosition = Me.Position;
-            var targetedPosition = new Position { X = 7, Y = 7 };
-            // On regarde les positions proches
-            //-------------
-            //   N
-            // W ME E
-            //   S
-            var direction = GetDirection(myPosition, targetedPosition);
-            if(direction ==  Direction.None)
+
+            // Si on est déjà sur la cible ou si la cible est inatteignable
+            if (myPosition == _targetedPosition || !Map[targetPosition].CanGoHere)
             {
+                Console.Error.WriteLine(!Map[targetPosition].CanGoHere ? $"{targetPosition} not accessible" : "I'm still at this position");
                 MoveRandom(instruction, dico);
             }
             else
             {
-                dico[direction].Visited = true;
-                instruction.Direction = direction;
+                var direction = Direction.None;
+                var paths = myPosition.FindPath(_targetedPosition, Map);
+                if (paths.Count > 0)
+                {
+                    direction = myPosition.DirectionToTake(paths[0].Position);
+                    Console.Error.WriteLine($"Moving from {myPosition} to {paths[0].Position} with: {direction.ToMove()}");
+
+                    paths[0].Visited = true;
+                    instruction.Direction = direction;
+                }
+                else
+                {
+                    Console.Error.WriteLine("No move -> Surface");
+                    instruction.Direction = Direction.Surface;
+                    ResetVisitedCells();
+                    Map[myPosition].Visited = true;
+                    // MoveRandom(instruction, dico);
+                }
             }
-
-
         }
 
         private void MoveRandom(Instruction instruction, Dictionary<Direction, MapCell> dico)
         {
-            // Console.Error.WriteLine("MoveRandom");
-
             // A priori on ne connait pas la position de l'ennemi
             // On va se déplacer en essayant de ne pas s'enfermer
 
@@ -952,8 +1035,6 @@ namespace OceanOfCode
 
             if (direction == Direction.None)
             {
-                // Console.Error.WriteLine("No direction found");
-
                 if (CanNorth)
                     direction = Direction.North;
                 else if (CanEst)
@@ -965,9 +1046,8 @@ namespace OceanOfCode
                 else
                 {
                     direction = Direction.Surface;
-                    ResetVisitedCell();
-                    var currentPosition = Me.Position;
-                    Map[currentPosition.X, currentPosition.Y].Visited = true;
+                    ResetVisitedCells();
+                    Map[Me.Position].Visited = true;
                 }
             }
 
@@ -979,121 +1059,12 @@ namespace OceanOfCode
 
             instruction.Direction = direction;
         }
-
-        private void MoveToEstimatedPosition(Instruction instruction, Dictionary<Direction, MapCell> dico, PositionToTake positionToTake)
-        {
-            // Console.Error.WriteLine("MoveToEstimatedPosition");
-
-
-            var direction = Direction.None;
-            var enemyPosition = positionToTake == PositionToTake.Real ? Enemy.Position : Enemy.LastEstimatedPosition;
-
-            if (Me.Position.X > enemyPosition.X && CanWest)
-            {
-                direction = Direction.West;
-            }
-            else if (Me.Position.X < enemyPosition.X && CanEst)
-            {
-                direction = Direction.Est;
-
-            }
-            else
-            {
-                Console.Error.WriteLine("We are on same x");
-                Enemy.LastEstimatedPosition.XPrecision = 0;
-            }
-
-            if (direction == Direction.None)
-            {
-                if (Me.Position.Y > enemyPosition.Y && CanNorth)
-                {
-                    direction = Direction.North;
-                }
-                else if (Me.Position.Y < enemyPosition.Y && CanSouth)
-                {
-                    direction = Direction.South;
-
-                }
-                else
-                {
-                    Console.Error.WriteLine("We are on same Y");
-                    Enemy.LastEstimatedPosition.YPrecision = 0;
-                }
-            }
-
-            if (direction == Direction.None)
-            {
-                Console.Error.WriteLine("Nothing found go random..");
-                MoveRandom(instruction, dico);
-            }
-            else
-            {
-                Console.Error.WriteLine($"/2\\ - P: {Me.Position} - S: {Me.Position.Section} -> {direction.ToMove()}");
-                if (dico.ContainsKey(direction))
-                    dico[direction].Visited = true;
-
-                instruction.Direction = direction;
-            }
-
-
-
-        }
-
-        private void MoveAndStayClose(Instruction instruction, Dictionary<Direction, MapCell> dico)
-        {
-            var p2 = Enemy.Position;
-            var p1 = Me.Position;
-            var distance = p2.Distance(p1);
-
-            Console.Error.WriteLine($"MoveAndStayClose: {distance}");
-
-            if (distance < 4)
-            {
-                // On peut se reculer de lui
-                var direction = GetDirection(p1, p2);
-
-
-                if (direction == Direction.None)
-                {
-                    Console.Error.WriteLine($"P3 failed...");
-                    MoveToEstimatedPosition(instruction, dico, PositionToTake.Real);
-                }
-                else
-                {
-                    if (dico.ContainsKey(direction))
-                        dico[direction].Visited = true;
-
-                    instruction.Direction = direction;
-                    Console.Error.WriteLine($"/3\\ - P: {Me.Position} - S: {Me.Position.Section} -> {direction.ToMove()}");
-                }
-
-
-            }
-            else
-            {
-                MoveToEstimatedPosition(instruction, dico, PositionToTake.Real);
-            }
-        }
         #endregion
 
-        private Direction GetDirection(Position p1, Position p2)
-        {
-            var direction = Direction.None;
-            if (p1.X != p2.X && p1.X > p2.X)
-                if (CanWest) direction = Direction.West;
-            else
-                if (CanEst) direction = Direction.Est;
-
-            if (p1.Y != p2.Y && p1.Y > p2.Y)
-                if (CanNorth) direction = Direction.North;
-            else
-                if (CanSouth) direction = Direction.South;
-            
-            return direction;
-        }
 
         #endregion
 
+        #region Loading
         /// <summary>
         /// Charger
         /// </summary>
@@ -1107,6 +1078,7 @@ namespace OceanOfCode
             //    actions += " SONAR";
 
         }
+        #endregion
 
     }
 
@@ -1199,38 +1171,46 @@ namespace OceanOfCode
             return Math.Abs(p1.X - p2.X) + Math.Abs(p1.Y - p2.Y);
         }
 
-        public static Direction DirectionToTake(this Position p1, Position p2, Map map)
+        /// <summary>
+        /// Permet d'avoir la direction à prendre entre 2 points
+        /// </summary>
+        /// <param name="p1"></param>
+        /// <param name="p2"></param>
+        /// <returns></returns>
+        public static Direction DirectionToTake(this Position p1, Position p2)
         {
             var direction = Direction.None;
+            if (p1.X > p2.X)
+                direction = Direction.West;
+            else if (p1.X < p2.X)
+                direction = Direction.Est;
 
-
+            if (p1.Y > p2.Y)
+                direction = Direction.North;
+            else if (p1.Y < p2.Y)
+                direction = Direction.South;
 
             return direction;
         }
 
         public static bool IsValidPosition(this Position p1, Map map, int yOffset = 0, int xOffset = 0)
         {
+            var isValid = true;
             var height = p1.Y + yOffset;
             var width = p1.X + xOffset;
 
             if (height < 0 || height > map.Height - 1)
-                return false;
+                isValid = false;
 
-            if (width < 0 || width > map.Width - 1)
-                return false;
+            if (isValid && ( width < 0 || width > map.Width - 1))
+                isValid = false;
 
-            return true;
-        }
+            if (isValid && map[p1.X + xOffset, p1.Y + yOffset].CellType == CellType.Island)
+                isValid = false;
 
-        public static Direction StayCloser(this Position p1, Position p2, bool moveAway)
-        {
+            // Console.Error.WriteLine($"{p1} is valid position ? {isValid}  ({height}, {width})");
 
-            if (p1.X != p2.X && p1.X > p2.X)
-                return moveAway ? Direction.West : Direction.Est;
-            if (p1.Y != p2.Y && p1.Y > p2.Y)
-                return moveAway ? Direction.North : Direction.South;
-
-            return Direction.South;
+            return isValid;
         }
     }
 
@@ -1330,6 +1310,150 @@ namespace OceanOfCode
                 return text;
 
             return text.Substring(0, 1).ToUpper() + text.Substring(1).ToLower();
+        }
+    }
+
+    public static class PathFinder
+    {
+        public static List<MapCell> FindPath(this Position start, Position end, Map map)
+        {
+            // reset de la précédante 
+            map.Maze2D.ForEach(row =>
+            {
+                row.ForEach(c => {
+                    c.Parent = null;
+                    c.Position.F = 0;
+                    c.Position.G = 0;
+                    c.Position.H = 0;
+
+                });
+            });
+
+            MapCell current = null;
+            var openList = new List<MapCell>();
+            var closedList = new List<MapCell>();
+            int g = 0;
+            Console.Error.WriteLine($"Path finding with start:{start} - target:{end}");
+            openList.Add(map[start]);
+            while (openList.Count > 0)
+            {
+
+                // get the square with the lowest F score  
+                var lowest = openList.Min(cell => cell.Position.F);
+                current = openList.First(cell => cell.Position.F == lowest);
+
+                // Console.Error.WriteLine($"scan for {current.Position}");
+
+                // add the current square to the closed list  
+                closedList.Add(current);
+                // remove it from the open list  
+                openList.Remove(current);
+
+                // if we added the destination to the closed list, we've found a path  
+                if (closedList.FirstOrDefault(cell => cell.Position == end) != null)
+                    break;
+
+                var adjacentSquares = GetWalkableAdjacentSquares(current.Position, map, openList);
+                g = current.Position.G + 1;
+
+                foreach (var adjacentSquareCell in adjacentSquares)
+                {
+                    var adjacentSquare = adjacentSquareCell.Position;
+                    // if this adjacent square is already in the closed list, ignore it  
+                    if (closedList.FirstOrDefault(cell => cell.Position == adjacentSquare) != null)
+                        continue;
+
+                    // if it's not in the open list...  
+                    if (openList.FirstOrDefault(cell => cell.Position == adjacentSquare) == null)
+                    {
+                        // compute its score, set the parent  
+                        adjacentSquare.G = g;
+                        adjacentSquare.H = adjacentSquare.Distance(end);
+                        adjacentSquare.F = adjacentSquare.G + adjacentSquare.H;
+                        // a voir
+                        adjacentSquareCell.Parent = current;
+
+                        // and add it to the open list  
+                        openList.Insert(0, adjacentSquareCell);
+                    }
+                    else
+                    {
+                        // test if using the current G score makes the adjacent square's F score  
+                        // lower, if yes update the parent because it means it's a better path  
+                        if (g + adjacentSquare.H < adjacentSquare.F)
+                        {
+                            adjacentSquare.G = g;
+                            adjacentSquare.F = adjacentSquare.G + adjacentSquare.H;
+                            // a voir
+                            adjacentSquareCell.Parent = current;
+                        }
+                    }
+                }
+
+            }
+            var endCell = current;
+            var cellLink = new List<MapCell>();
+            while (current != null)
+            {
+                // Il ne faut pas ajouter ce qu'on a déjà fait
+                if (!current.Visited && current.Position != start)
+                    cellLink.Add(current);
+
+                current = current.Parent;
+            }
+
+
+            cellLink.Reverse();
+            return cellLink;
+        }
+
+        public static List<MapCell> GetWalkableAdjacentSquares(Position p, Map map, List<MapCell> openList)
+        {
+            var list = new List<MapCell>();
+            var left = p.X != 0 ? map[p.X - 1, p.Y] : null;
+            var right = p.X != 13 ? map[p.X + 1, p.Y] : null;
+            var bot = p.Y != 13 ? map[p.X, p.Y + 1] : null;
+            var top = p.Y != 0 ? map[p.X, p.Y - 1] : null;
+
+            //Console.Error.WriteLine("--");
+            //Console.Error.WriteLine($"{top?.Position}");
+            //Console.Error.WriteLine($"{left?.Position} {p} {right?.Position}");
+            //Console.Error.WriteLine($"{bot?.Position}");
+            //Console.Error.WriteLine($" [S: {bot.CanGoHere}, N: {top.CanGoHere}, E: {right.CanGoHere}, W: {left.CanGoHere}]");
+            //Console.Error.WriteLine("--");
+
+            var availables = new List<MapCell> { left, right, top, bot };
+            foreach (var i in availables)
+            {
+                if (i != null && i.CanGoHere)
+                {
+                    var n = openList.Find(c => c.Position == i.Position);
+                    if (n == null) list.Add(i);
+                    else list.Add(n);
+                }
+            }
+
+            return list;
+        }
+    }
+
+    public static class SectionHelper
+    {
+        public static Position ToMidleSectionPosition(this int section)
+        {
+            switch (section)
+            {
+                case 1: return new Position { X = 2, Y = 2 };
+                case 2: return new Position { X = 7, Y = 2 };
+                case 3: return new Position { X = 12, Y = 2 };
+                case 4: return new Position { X = 2, Y = 7 };
+                case 5: return new Position { X = 7, Y = 7 };
+                case 6: return new Position { X = 12, Y = 7 };
+                case 7: return new Position { X = 2, Y = 12 };
+                case 8: return new Position { X = 7, Y = 12 };
+                case 9: return new Position { X = 12, Y = 12 };
+            }
+            return null;
         }
     }
 
