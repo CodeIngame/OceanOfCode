@@ -176,8 +176,8 @@ namespace OceanOfCode
         : Position
     {
 
-        public int XPrecision { get; set; } = 0;
-        public int YPrecision { get; set; } = 0;
+        public int XPrecision { get; set; } = -1;
+        public int YPrecision { get; set; } = -1;
 
         public EstimatedPosition()
         {
@@ -187,6 +187,14 @@ namespace OceanOfCode
         {
             X = p.X;
             Y = p.Y;
+        }
+
+        public override string ToString()
+        {
+            if(XPrecision != -1 && YPrecision != -1)
+                return $"{{{X}:{Y}}} precision: {XPrecision}:{YPrecision}";
+
+            return base.ToString();
         }
     }
 
@@ -678,7 +686,7 @@ namespace OceanOfCode
                 return;
 
             Console.Error.Write($"AnalyseHit Ep: {(Enemy.Position.Known ? Enemy.Position : Enemy.LastInstruction.EstimatedPosition)}");
-            var _case = "0";
+            var _analyseHitCase = "0";
 
             var enemyUsedToperdo = Enemy.LastInstruction.DeviceUsed == DeviceType.Torpedo;
             var iUsedTorpedo = Me.LastInstruction.DeviceUsed == DeviceType.Torpedo;
@@ -690,24 +698,24 @@ namespace OceanOfCode
 
             if (iUsedTorpedo && !enemyUsedToperdo && enemyLostHp)
             {
-                _case = "1";
+                _analyseHitCase = "1";
                 // J'ai tiré et il n'a pa tiré -> l'enemi à perdu des points de vie
                 var shootPosition = Me.LastInstruction.DeviceUsedPosition;
                 Console.Error.WriteLine($"I shoot and touch with perfect: ({enemyTouchedPerfect})");
                 if (enemyTouchedPerfect)
                 {
-                    _case = "1.1";
+                    _analyseHitCase = "1.1";
                     Enemy.Position = shootPosition;
                     Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 0, YPrecision = 0 };
                 }
                 else
                 {
-                    _case = "1.2";
+                    _analyseHitCase = "1.2";
                 }
             }
             else if (iUsedTorpedo && enemyUsedToperdo && enemyLostHp)
             {
-                _case = "2";
+                _analyseHitCase = "2";
 
                 // Nous avons tiré -> l'enemi à perdu des points de vie
                 // Attention si on tire tous les 2 avec un tires sur l'enemi il peut perdre 2hp mais ça ne sera pas un perfect
@@ -722,30 +730,30 @@ namespace OceanOfCode
 
                 if (hpLost == 1)
                 {
-                    _case = "2.1";
+                    _analyseHitCase = "2.1";
                     // un seul de nous 2 à bien tirer (moi ?)
                 }
                 else if (hpLost == 2)
                 {
-                    _case = "2.2";
+                    _analyseHitCase = "2.2";
 
                 }
                 else if (hpLost == 3)
                 {
-                    _case = "2.3";
+                    _analyseHitCase = "2.3";
                     // Un des 2 a très bien tirer
                 }
 
             }
             else if (!iUsedTorpedo && enemyUsedToperdo && enemyLostHp)
             {
-                _case = "3";
+                _analyseHitCase = "3";
 
                 //Il a tiré -> il a perdu des points de vie
                 var shootPosition = Enemy.LastInstruction.DeviceUsedPosition;
                 if (enemyTouchedPerfect)
                 {
-                    _case = "3.1";
+                    _analyseHitCase = "3.1";
                     //Il s'est tiré dessus parfaitement c'est con ^^
                     // Console.Error.WriteLine($"Auto kill: ({shootPosition})");
                     Enemy.Position = shootPosition;
@@ -753,14 +761,14 @@ namespace OceanOfCode
                 }
                 else
                 {
-                    _case = "3.2";
+                    _analyseHitCase = "3.2";
                     // Console.Error.WriteLine($"Auto kill, he is close to ({shootPosition})");
                     Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 1, YPrecision = 1 };
                 }
             }
             else if (enemyUsedToperdo && !enemyLostHp && !iLostHp)
             {
-                _case = "4";
+                _analyseHitCase = "4";
 
                 var lastDirection = Enemy.LastInstruction.Direction;
                 var lastEstimatedPosition = Enemy.LastEstimatedPosition;
@@ -771,7 +779,7 @@ namespace OceanOfCode
                 var newEstimatedPosition = new EstimatedPosition { X = lastEstimatedPosition.X + xOffset, Y = lastEstimatedPosition.Y + yOffset };
                 if (newEstimatedPosition.IsValidPosition(Map))
                 {
-                    _case = "4.1";
+                    _analyseHitCase = "4.1";
                     // Console.Error.WriteLine($"Random shoot - position updated to: {newEstimatedPosition}");
                     Enemy.LastEstimatedPosition = newEstimatedPosition;
                 }
@@ -781,7 +789,7 @@ namespace OceanOfCode
             }
             else if (iUsedTorpedo && !enemyUsedToperdo && !enemyLostHp && Enemy.LastEstimatedPosition.Known)
             {
-                _case = "5";
+                _analyseHitCase = "5";
                 // J'ai tiré a coté on décale de 2 le tire dans la directio opposé de la mienne
                 var currentEstimatedPosition = new EstimatedPosition(Enemy.LastEstimatedPosition);
                 var myDirection = Me.LastInstruction.Direction;
@@ -789,12 +797,12 @@ namespace OceanOfCode
 
                 if (currentEstimatedPosition.IsValidPosition(Map))
                 {
-                    _case = "5.1";
+                    _analyseHitCase = "5.1";
                     Enemy.LastEstimatedPosition = currentEstimatedPosition;
                 }
             }
 
-            Console.Error.WriteLine($" -> _case: {_case} - EPosition : {(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition)}");
+            Console.Error.WriteLine($" -> _analyseHitCase: {_analyseHitCase} - EPosition : {(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition)}");
 
         }
 
@@ -809,7 +817,9 @@ namespace OceanOfCode
             if (Enemy.LastInstructions.Count > 0)
             {
                 var previousInstruction = Enemy.LastInstructions[Enemy.LastInstructions.Count - 2];
-                shouldAnalyse = !previousInstruction.EstimatedPosition.Known || (previousInstruction.EstimatedPosition.XPrecision == Torpedo.Range || previousInstruction.EstimatedPosition.YPrecision == Torpedo.Range);
+                shouldAnalyse = !previousInstruction.EstimatedPosition.Known
+                    || (previousInstruction.EstimatedPosition.XPrecision == Torpedo.Range && previousInstruction.EstimatedPosition.YPrecision == Torpedo.Range)
+                    || (previousInstruction.EstimatedPosition.XPrecision == -1 && previousInstruction.EstimatedPosition.YPrecision == -1);
                 //if(!shouldAnalyse)
                 //    Console.Error.WriteLine($"Do not analyse 'AnalyseToperdo'");
             }
@@ -832,7 +842,7 @@ namespace OceanOfCode
         private void AnalyseMove(Instruction instruction)
         {
             Console.Error.Write($"AnalyseMove Ep: {(Enemy.Position.Known ? Enemy.Position : Enemy.LastInstruction.EstimatedPosition)}");
-            var _moveCase = "0";
+            var _analyseMoveCase = "0";
 
             var lastInstruction = Enemy.LastInstruction;
             if (!Enemy.Position.Known && Enemy.LastInstructions.Count > 0)
@@ -850,12 +860,12 @@ namespace OceanOfCode
 
                     if (!newEstimatedPosition.IsValidPosition(Map, yOffset, xOffset))
                     {
-                        _moveCase = "1.1";
+                        _analyseMoveCase = "1.1";
                         Console.Error.WriteLine("No reachable position, define close position");
                     }
                     else
                     {
-                        _moveCase = "1.2";
+                        _analyseMoveCase = "1.2";
                         newEstimatedPosition.X += xOffset;
                         newEstimatedPosition.Y += yOffset;
                     }
@@ -877,7 +887,7 @@ namespace OceanOfCode
             if (Enemy.Position.Known)
             {
                 // Console.Error.WriteLine("Track move !");
-                _moveCase = "2.1";
+                _analyseMoveCase = "2.1";
 
                 var lastDirection = lastInstruction.Direction;
                 var xOffset = lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
@@ -890,7 +900,7 @@ namespace OceanOfCode
 
                 if (newEnemyPosition.IsValidPosition(Map, yOffset, xOffset))
                 {
-                    _moveCase = "2.2";
+                    _analyseMoveCase = "2.2";
 
                     //Console.Error.Write($"Enemy Position : {Enemy.Position} ->");
                     Enemy.Position.X += xOffset;
@@ -899,7 +909,7 @@ namespace OceanOfCode
 
                 }
             }
-            Console.Error.WriteLine($" -> _moveCase: {_moveCase} -  EPosition : {(Enemy.Position.Known ? Enemy.Position : lastInstruction.EstimatedPosition)}");
+            Console.Error.WriteLine($" -> _analyseMoveCase: {_analyseMoveCase} -  EPosition : {(Enemy.Position.Known ? Enemy.Position : lastInstruction.EstimatedPosition)}");
         }
         #endregion
 
@@ -931,13 +941,13 @@ namespace OceanOfCode
                     var distance = Me.Position.Distance(Enemy.LastEstimatedPosition);
                     if (distance <= Torpedo.Range)
                         cellToAttack = Map[Enemy.LastEstimatedPosition];
-                    //else if(distance <= Torpedo.Range + 1)
-                    //{
-                    //    var idealTarget = Enemy.LastEstimatedPosition;
-                    //    var actualPosition = Me.Position;
-                    //    var lastPath = PathFinder.FindPath(actualPosition, idealTarget, Map, false);
-                    //    cellToAttack = lastPath[lastPath.Count - 2];
-                    //}
+                    else if (distance <= Torpedo.Range + 1)
+                    {
+                        var idealTarget = Enemy.LastEstimatedPosition;
+                        var actualPosition = Me.Position;
+                        var lastPath = PathFinder.FindPath(actualPosition, idealTarget, Map, false);
+                        cellToAttack = lastPath[lastPath.Count - 2];
+                    }
 
                     Console.Error.WriteLine($"[A] Estimated Position know - distance:{distance}");
 
