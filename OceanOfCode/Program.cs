@@ -119,6 +119,17 @@ namespace OceanOfCode
             Y = p.Y;
         }
 
+        public void AddXOffset(int x)
+        {
+            X += x;
+        }
+
+        public void AddYOffset(int y)
+        {
+            Y += y;
+        }
+
+
         /// <summary>
         /// Permet d'obtenir la section de la position
         /// </summary>
@@ -195,11 +206,8 @@ namespace OceanOfCode
         /// La position du joueur
         /// </summary>
         public Position Position { get; set; } = new Position();
-        public EstimatedPosition LastEstimatedPosition
-        {
-            get { return LastInstruction.EstimatedPosition; }
-            set { LastInstruction.EstimatedPosition = value; }
-        }
+
+     
 
         /// <summary>
         /// Le nombre de point de vie
@@ -217,7 +225,22 @@ namespace OceanOfCode
             new Mine {  }
         };
 
-        public List<Instruction> LastInstructions = new List<Instruction>();
+        /// <summary>
+        /// Provient des instructions
+        /// </summary>
+        public EstimatedPosition LastEstimatedPosition
+        {
+            get { return LastInstruction.EstimatedPosition; }
+            set { LastInstruction.EstimatedPosition = value; }
+        }
+
+        public List<Instruction> LastInstructions { get; set; } = new List<Instruction>();
+        public Instruction LastInstruction
+        {
+            get { return LastInstructions.Count > 0 ? LastInstructions[LastInstructions.Count-1] : new Instruction(); }
+            set { LastInstructions[LastInstructions.Count-1] = value; }
+        }
+
         public List<int> HealthPointHistoric { get; set; } = new List<int>();
 
         #region Helpers
@@ -229,14 +252,8 @@ namespace OceanOfCode
         protected Device Device(DeviceType DeviceType) => Devices.First(d => d.DeviceType == DeviceType);
         #endregion
 
-        public Instruction LastInstruction
-        {
-            get { return LastInstructions.Count > 1 ? LastInstructions[LastInstructions.Count - 1] : new Instruction(); }
-            set { LastInstructions[LastInstructions.Count - 1] = value; }
-        }
-
-        public bool Touched => HealthPointHistoric.Count > 2 && HealthPointHistoric[HealthPointHistoric.Count - 2] > HealthPointHistoric[HealthPointHistoric.Count - 1];
-        public bool TouchedPerfect => HealthPointHistoric.Count > 2 && HealthPointHistoric[HealthPointHistoric.Count - 2] - 2 == HealthPointHistoric[HealthPointHistoric.Count - 1];
+        public bool Touched => HealthPointHistoric.Count > 1 && HealthPointHistoric[HealthPointHistoric.Count - 2] > HealthPointHistoric[HealthPointHistoric.Count - 1];
+        public bool TouchedPerfect => HealthPointHistoric.Count > 1 && HealthPointHistoric[HealthPointHistoric.Count - 2] - 2 == HealthPointHistoric[HealthPointHistoric.Count - 1];
         public int TotalHpLost => HealthPointHistoric[HealthPointHistoric.Count - 2] - HealthPointHistoric[HealthPointHistoric.Count - 1];
 
         /// <summary>
@@ -258,6 +275,21 @@ namespace OceanOfCode
         public DeviceType DeviceLoad { get; set; } = DeviceType.None;
 
         public EstimatedPosition EstimatedPosition { get; set; } = new EstimatedPosition();
+
+        public Instruction()
+        {
+
+        }
+
+        public Instruction(Instruction i)
+        {
+            Command = i.Command;
+            Direction = i.Direction;
+            DeviceUsed = i.DeviceUsed;
+            DeviceUsedPosition = i.DeviceUsedPosition;
+            DeviceLoad = i.DeviceLoad;
+            EstimatedPosition = i.EstimatedPosition;
+        }
 
         public override string ToString()
         {
@@ -434,7 +466,8 @@ namespace OceanOfCode
         {
             Map.Maze2D.ForEach(row =>
             {
-                row.ForEach(c => {
+                row.ForEach(c =>
+                {
                     c.Visited = false;
                     c.Parent = null;
                     c.Position.F = 0;
@@ -478,7 +511,7 @@ namespace OceanOfCode
                 }
             }
 
-            Console.Error.WriteLine($"Will use section: {sectionToUse} on -> {dico[sectionToUse][maxEmptyCell / 2]}");
+            Console.Error.WriteLine($"Will use section: {sectionToUse} on -> {dico[sectionToUse][maxEmptyCell / 2].Position}");
 
             return dico[sectionToUse][maxEmptyCell / 2];
         }
@@ -589,12 +622,11 @@ namespace OceanOfCode
 
             // On enregistre le précédent déplacement
             if (opponentOrders != "NA")
-                Enemy.LastInstructions.Add(opponentOrders.ToInstructions());
+            {
+                var copy = new Instruction(Enemy.LastInstruction);
+                Enemy.LastInstructions.Add(opponentOrders.ToInstructions(copy));
+            }
             #endregion
-
-
-
-
         }
         #endregion
 
@@ -642,33 +674,41 @@ namespace OceanOfCode
         #region Analyse Logics
         private void AnalyseHit(Instruction instruction)
         {
+            if (Enemy.Position.Known)
+                return;
+
+            Console.Error.Write($"AnalyseHit Ep: {(Enemy.Position.Known ? Enemy.Position : Enemy.LastInstruction.EstimatedPosition)}");
+            var _case = "0";
+
             var enemyUsedToperdo = Enemy.LastInstruction.DeviceUsed == DeviceType.Torpedo;
             var iUsedTorpedo = Me.LastInstruction.DeviceUsed == DeviceType.Torpedo;
 
             var enemyLostHp = Enemy.Touched;
             var iLostHp = Me.Touched;
             var enemyTouchedPerfect = Enemy.TouchedPerfect;
-
-            if (Enemy.Position.Known)
-                return;
+      
 
             if (iUsedTorpedo && !enemyUsedToperdo && enemyLostHp)
             {
+                _case = "1";
                 // J'ai tiré et il n'a pa tiré -> l'enemi à perdu des points de vie
                 var shootPosition = Me.LastInstruction.DeviceUsedPosition;
                 Console.Error.WriteLine($"I shoot and touch with perfect: ({enemyTouchedPerfect})");
                 if (enemyTouchedPerfect)
                 {
+                    _case = "1.1";
                     Enemy.Position = shootPosition;
                     Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 0, YPrecision = 0 };
                 }
                 else
                 {
-
+                    _case = "1.2";
                 }
             }
             else if (iUsedTorpedo && enemyUsedToperdo && enemyLostHp)
             {
+                _case = "2";
+
                 // Nous avons tiré -> l'enemi à perdu des points de vie
                 // Attention si on tire tous les 2 avec un tires sur l'enemi il peut perdre 2hp mais ça ne sera pas un perfect
                 var enemyShoot = Enemy.LastInstruction.DeviceUsedPosition;
@@ -676,44 +716,52 @@ namespace OceanOfCode
                 var distance = myShoot.Distance(enemyShoot);
                 var isCloseShoot = distance <= 2;
                 var hpLost = Enemy.TotalHpLost;
-                Console.Error.WriteLine($"We shoot and touch with perfect: ({enemyTouchedPerfect}) : fake perfect {isCloseShoot}");
+                Console.Error.Write($" We shoot and touch with perfect: ({enemyTouchedPerfect}) : fake perfect {isCloseShoot}");
                 if (isCloseShoot)
-                    Console.Error.WriteLine($"myShoot: {myShoot} - enemyShoot: {enemyShoot} with hp lost: {hpLost}");
+                    Console.Error.Write($" myShoot: {myShoot} - enemyShoot: {enemyShoot} with hp lost: {hpLost}");
 
                 if (hpLost == 1)
                 {
+                    _case = "2.1";
                     // un seul de nous 2 à bien tirer (moi ?)
                 }
                 else if (hpLost == 2)
                 {
+                    _case = "2.2";
 
                 }
                 else if (hpLost == 3)
                 {
+                    _case = "2.3";
                     // Un des 2 a très bien tirer
                 }
 
             }
             else if (!iUsedTorpedo && enemyUsedToperdo && enemyLostHp)
             {
+                _case = "3";
+
                 //Il a tiré -> il a perdu des points de vie
                 var shootPosition = Enemy.LastInstruction.DeviceUsedPosition;
                 if (enemyTouchedPerfect)
                 {
+                    _case = "3.1";
                     //Il s'est tiré dessus parfaitement c'est con ^^
-                    Console.Error.WriteLine($"Auto kill: ({shootPosition})");
+                    // Console.Error.WriteLine($"Auto kill: ({shootPosition})");
                     Enemy.Position = shootPosition;
                     Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 0, YPrecision = 0 };
                 }
                 else
                 {
-                    Console.Error.WriteLine($"Auto kill, he is close to ({shootPosition})");
+                    _case = "3.2";
+                    // Console.Error.WriteLine($"Auto kill, he is close to ({shootPosition})");
                     Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 1, YPrecision = 1 };
                 }
-            } 
-            else if(enemyUsedToperdo && !enemyLostHp && !iLostHp)
+            }
+            else if (enemyUsedToperdo && !enemyLostHp && !iLostHp)
             {
-                
+                _case = "4";
+
                 var lastDirection = Enemy.LastInstruction.Direction;
                 var lastEstimatedPosition = Enemy.LastEstimatedPosition;
 
@@ -723,14 +771,30 @@ namespace OceanOfCode
                 var newEstimatedPosition = new EstimatedPosition { X = lastEstimatedPosition.X + xOffset, Y = lastEstimatedPosition.Y + yOffset };
                 if (newEstimatedPosition.IsValidPosition(Map))
                 {
-                    Console.Error.WriteLine($"Random shoot - position updated to: {newEstimatedPosition}");
+                    _case = "4.1";
+                    // Console.Error.WriteLine($"Random shoot - position updated to: {newEstimatedPosition}");
                     Enemy.LastEstimatedPosition = newEstimatedPosition;
-
                 }
 
 
 
             }
+            else if (iUsedTorpedo && !enemyUsedToperdo && !enemyLostHp && Enemy.LastEstimatedPosition.Known)
+            {
+                _case = "5";
+                // J'ai tiré a coté on décale de 2 le tire dans la directio opposé de la mienne
+                var currentEstimatedPosition = new EstimatedPosition(Enemy.LastEstimatedPosition);
+                var myDirection = Me.LastInstruction.Direction;
+                currentEstimatedPosition = new EstimatedPosition(currentEstimatedPosition.PositionToTake(myDirection));
+
+                if (currentEstimatedPosition.IsValidPosition(Map))
+                {
+                    _case = "5.1";
+                    Enemy.LastEstimatedPosition = currentEstimatedPosition;
+                }
+            }
+
+            Console.Error.WriteLine($" -> _case: {_case} - EPosition : {(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition)}");
 
         }
 
@@ -739,8 +803,10 @@ namespace OceanOfCode
             if (Enemy.Position.Known)
                 return;
 
+            Console.Error.WriteLine("AnalyseToperdo");
+
             var shouldAnalyse = true;
-            if (Enemy.LastInstructions.Count > 1)
+            if (Enemy.LastInstructions.Count > 0)
             {
                 var previousInstruction = Enemy.LastInstructions[Enemy.LastInstructions.Count - 2];
                 shouldAnalyse = !previousInstruction.EstimatedPosition.Known || (previousInstruction.EstimatedPosition.XPrecision == Torpedo.Range || previousInstruction.EstimatedPosition.YPrecision == Torpedo.Range);
@@ -765,11 +831,14 @@ namespace OceanOfCode
 
         private void AnalyseMove(Instruction instruction)
         {
+            Console.Error.Write($"AnalyseMove Ep: {(Enemy.Position.Known ? Enemy.Position : Enemy.LastInstruction.EstimatedPosition)}");
+            var _moveCase = "0";
+
             var lastInstruction = Enemy.LastInstruction;
-            if (!Enemy.Position.Known && Enemy.LastInstructions.Count > 1)
+            if (!Enemy.Position.Known && Enemy.LastInstructions.Count > 0)
             {
-                //On regarde la position estimé du dernier coup
-                var previousInstruction = Enemy.LastInstructions[Enemy.LastInstructions.Count - 2];
+                //On regarde la position estimé du dernier coup (la position précédante est recopié N-2 = N-1)
+                var previousInstruction = Enemy.LastInstruction;
                 if (previousInstruction.EstimatedPosition.Known)
                 {
                     //On applique le déplacement du coup
@@ -781,23 +850,34 @@ namespace OceanOfCode
 
                     if (!newEstimatedPosition.IsValidPosition(Map, yOffset, xOffset))
                     {
+                        _moveCase = "1.1";
                         Console.Error.WriteLine("No reachable position, define close position");
                     }
                     else
                     {
+                        _moveCase = "1.2";
                         newEstimatedPosition.X += xOffset;
                         newEstimatedPosition.Y += yOffset;
                     }
 
                     // TODO il faudrait vérifier que l'emplacement est accessible (pas un bout d'île)
                     lastInstruction.EstimatedPosition = newEstimatedPosition;
-                    Console.Error.WriteLine($"Enemy estimated postion updated to: {lastInstruction.EstimatedPosition}");
+                    // Console.Error.WriteLine($"Enemy estimated postion updated to: {lastInstruction.EstimatedPosition}");
+                }
+                else
+                {
+                    // On connait pas encore sa positon mais il a fait surface
+                    if(previousInstruction.Direction == Direction.Surface)
+                    {
+
+                    }
                 }
             }
 
             if (Enemy.Position.Known)
             {
                 // Console.Error.WriteLine("Track move !");
+                _moveCase = "2.1";
 
                 var lastDirection = lastInstruction.Direction;
                 var xOffset = lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
@@ -810,13 +890,16 @@ namespace OceanOfCode
 
                 if (newEnemyPosition.IsValidPosition(Map, yOffset, xOffset))
                 {
-                    Console.Error.Write($"Enemy Position : {Enemy.Position} ->");
+                    _moveCase = "2.2";
+
+                    //Console.Error.Write($"Enemy Position : {Enemy.Position} ->");
                     Enemy.Position.X += xOffset;
                     Enemy.Position.Y += yOffset;
-                    Console.Error.WriteLine($" {Enemy.Position}");
+                    //Console.Error.WriteLine($" {Enemy.Position}");
 
                 }
             }
+            Console.Error.WriteLine($" -> _moveCase: {_moveCase} -  EPosition : {(Enemy.Position.Known ? Enemy.Position : lastInstruction.EstimatedPosition)}");
         }
         #endregion
 
@@ -848,6 +931,13 @@ namespace OceanOfCode
                     var distance = Me.Position.Distance(Enemy.LastEstimatedPosition);
                     if (distance <= Torpedo.Range)
                         cellToAttack = Map[Enemy.LastEstimatedPosition];
+                    //else if(distance <= Torpedo.Range + 1)
+                    //{
+                    //    var idealTarget = Enemy.LastEstimatedPosition;
+                    //    var actualPosition = Me.Position;
+                    //    var lastPath = PathFinder.FindPath(actualPosition, idealTarget, Map, false);
+                    //    cellToAttack = lastPath[lastPath.Count - 2];
+                    //}
 
                     Console.Error.WriteLine($"[A] Estimated Position know - distance:{distance}");
 
@@ -861,7 +951,7 @@ namespace OceanOfCode
 
 
                 // On se se tire pas dessus !
-                if (cellToAttack != null && cellToAttack.Position == Me.Position && Me.HealthPoint < Enemy.HealthPoint)
+                if (cellToAttack != null && (cellToAttack.Position == Me.Position || cellToAttack.Position.Distance(Me.Position) <= 2)) //&& Me.HealthPoint < Enemy.HealthPoint)
                 {
                     cellToAttack = null;
                     Console.Error.WriteLine("[A] Canceled shoot");
@@ -887,7 +977,7 @@ namespace OceanOfCode
         /// </summary>
         private void Move(Instruction instruction)
         {
-
+            var _caseMove = "0";
             var dico = new Dictionary<Direction, MapCell>
             {
                 { Direction.West, West() },
@@ -895,18 +985,19 @@ namespace OceanOfCode
                 { Direction.North, North() },
                 { Direction.South, South() },
             };
-            var distance =  Me.Position.Distance(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition);
-
+            var distance = Me.Position.Distance(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition);
 
             if (Enemy.Position.Known)
             {
-                Console.Error.WriteLine($"PEnemy: {Enemy.Position} - distance: {distance}");
-
                 if (distance >= 3)
+                {
+                    _caseMove = "1.1";
                     MoveToPosition(instruction, dico, Enemy.Position);
+                }
                 else
                 {
                     // On va tenter un déplacement au centre de la section courante
+                    _caseMove = "1.2";
                     var section = Me.Position.Section;
                     MoveToPosition(instruction, dico, section.ToMidleSectionPosition());
 
@@ -915,11 +1006,14 @@ namespace OceanOfCode
             }
             else if (Enemy.LastEstimatedPosition.Known)
             {
-                Console.Error.WriteLine($"P Estimated Enemy: {Enemy.LastEstimatedPosition} - distance: {distance}");
                 if (distance >= 3)
+                {
+                    _caseMove = "2.1";
                     MoveToPosition(instruction, dico, Enemy.LastEstimatedPosition);
+                }
                 else
                 {
+                    _caseMove = "2.3";
                     // On va tenter un déplacement au centre de la section courante
                     var section = Me.Position.Section;
                     MoveToPosition(instruction, dico, section.ToMidleSectionPosition());
@@ -928,8 +1022,14 @@ namespace OceanOfCode
             }
             else
             {
+                _caseMove = "3";
                 MoveToPosition(instruction, dico, new Position { X = 7, Y = 7 });
             }
+
+            var msg1 = $"PEnemy: {Enemy.Position} - distance: {distance}";
+            var msg2 = $"(Estimated) PEnemy: {Enemy.LastEstimatedPosition} - distance: {distance}";
+            var msg = _caseMove.Contains("1.") ? msg1 : _caseMove.Contains("2.") ? msg2 : ""; 
+            Console.Error.WriteLine($" -> Move: {_caseMove} -> {msg}");
 
         }
 
@@ -952,14 +1052,14 @@ namespace OceanOfCode
                 if (paths.Count > 0)
                 {
                     direction = myPosition.DirectionToTake(paths[0].Position);
-                    Console.Error.WriteLine($"Moving from {myPosition} to {paths[0].Position} with: {direction.ToMove()}");
+                    Console.Error.WriteLine($" found {paths[0].Position} with: {direction.ToMove()}");
 
                     paths[0].Visited = true;
                     instruction.Direction = direction;
                 }
                 else
                 {
-                    Console.Error.WriteLine("No move -> Surface");
+                    Console.Error.WriteLine(" No move -> Surface");
                     instruction.Direction = Direction.Surface;
                     ResetVisitedCells();
                     Map[myPosition].Visited = true;
@@ -1202,7 +1302,7 @@ namespace OceanOfCode
             if (height < 0 || height > map.Height - 1)
                 isValid = false;
 
-            if (isValid && ( width < 0 || width > map.Width - 1))
+            if (isValid && (width < 0 || width > map.Width - 1))
                 isValid = false;
 
             if (isValid && map[p1.X + xOffset, p1.Y + yOffset].CellType == CellType.Island)
@@ -1212,8 +1312,19 @@ namespace OceanOfCode
 
             return isValid;
         }
-    }
 
+        public static Position PositionToTake(this Position p1, Direction direction)
+        {
+            switch (direction)
+            {
+                case Direction.West: p1.AddXOffset(-1); break;
+                case Direction.Est: p1.AddXOffset(1); break;
+                case Direction.North: p1.AddYOffset(-1); break;
+                case Direction.South: p1.AddYOffset(1); break;
+            }
+            return p1;
+        }
+    }
     public static class DirectionHelpers
     {
         public static string ToMove(this Direction direction)
@@ -1239,14 +1350,15 @@ namespace OceanOfCode
         /// </summary>
         /// <param name="move"></param>
         /// <returns></returns>
-        public static Instruction ToInstructions(this string move)
+        public static Instruction ToInstructions(this string move, Instruction instruction)
         {
+            Console.Error.Write($"ToInstructions Ep {instruction.EstimatedPosition}");
             // TORPEDO 0 5|MOVE N TORPEDO
             // MOVE N TORPEDO
             // MOVE E TORPEDO
             // TORPEDO 0 8|MOVE E TORPEDO
             // MOVE E| TORPEDO 8 6
-            var instruction = new Instruction();
+            // SURFACE 7
             var input = move;
 
             var multiOrders = move.Contains("|");
@@ -1266,22 +1378,44 @@ namespace OceanOfCode
                 input = inputs[startByMove ? 0 : 1];
             }
 
-            var moveUsed = input.Substring(0, "MOVE E".Length);
-
-            switch (moveUsed)
+            if (!input.Contains("SURFACE"))
             {
-                case "MOVE S": instruction.Direction = Direction.South; break;
-                case "MOVE N": instruction.Direction = Direction.North; break;
-                case "MOVE W": instruction.Direction = Direction.West; break;
-                case "MOVE E": instruction.Direction = Direction.Est; break;
+
+                var moveUsed = input.Substring(0, "MOVE E".Length);
+
+                switch (moveUsed)
+                {
+                    case "MOVE S": instruction.Direction = Direction.South; break;
+                    case "MOVE N": instruction.Direction = Direction.North; break;
+                    case "MOVE W": instruction.Direction = Direction.West; break;
+                    case "MOVE E": instruction.Direction = Direction.Est; break;
+                }
+
+                var loadedDevice = input.Substring(moveUsed.Length);
+                var parsedLoad = Enum.TryParse<DeviceType>(loadedDevice.ToPascalCase(), out var deviceTypeLoaded);
+                instruction.DeviceLoad = deviceTypeLoaded;
             }
 
-            var loadedDevice = input.Substring(moveUsed.Length);
-            var parsedLoad = Enum.TryParse<DeviceType>(loadedDevice.ToPascalCase(), out var deviceTypeLoaded);
-            instruction.DeviceLoad = deviceTypeLoaded;
+            if (input.Contains("SURFACE"))
+            {
+                var s = input.Split(' ');
+                instruction.Direction = Direction.Surface;
+                instruction.Command = input;
+                var secteur = int.Parse(s[1]);
 
+                if (instruction.EstimatedPosition.Section != secteur)
+                {
+                    var middle = secteur.ToMidleSectionPosition();
+                    instruction.EstimatedPosition = new EstimatedPosition(middle) { XPrecision = 3, YPrecision = 3 };
+                    //p.LastEstimatedPosition = instruction.EstimatedPosition;
+                    // Console.Error.WriteLine("Estimated position updated");
+                }
+
+            }
+
+
+            Console.Error.WriteLine($"-> {instruction.EstimatedPosition}");
             Console.Error.WriteLine($"Instruction decrypted: {instruction}");
-
             return instruction;
 
         }
@@ -1315,12 +1449,13 @@ namespace OceanOfCode
 
     public static class PathFinder
     {
-        public static List<MapCell> FindPath(this Position start, Position end, Map map)
+        public static List<MapCell> FindPath(this Position start, Position end, Map map, bool useVisited = true)
         {
             // reset de la précédante 
             map.Maze2D.ForEach(row =>
             {
-                row.ForEach(c => {
+                row.ForEach(c =>
+                {
                     c.Parent = null;
                     c.Position.F = 0;
                     c.Position.G = 0;
@@ -1333,7 +1468,7 @@ namespace OceanOfCode
             var openList = new List<MapCell>();
             var closedList = new List<MapCell>();
             int g = 0;
-            Console.Error.WriteLine($"Path finding with start:{start} - target:{end}");
+            Console.Error.Write($"Path finding with start:{start} - target:{end}");
             openList.Add(map[start]);
             while (openList.Count > 0)
             {
@@ -1353,7 +1488,7 @@ namespace OceanOfCode
                 if (closedList.FirstOrDefault(cell => cell.Position == end) != null)
                     break;
 
-                var adjacentSquares = GetWalkableAdjacentSquares(current.Position, map, openList);
+                var adjacentSquares = GetWalkableAdjacentSquares(current.Position, map, openList, useVisited);
                 g = current.Position.G + 1;
 
                 foreach (var adjacentSquareCell in adjacentSquares)
@@ -1407,7 +1542,7 @@ namespace OceanOfCode
             return cellLink;
         }
 
-        public static List<MapCell> GetWalkableAdjacentSquares(Position p, Map map, List<MapCell> openList)
+        public static List<MapCell> GetWalkableAdjacentSquares(Position p, Map map, List<MapCell> openList, bool useVisited = true)
         {
             var list = new List<MapCell>();
             var left = p.X != 0 ? map[p.X - 1, p.Y] : null;
@@ -1425,7 +1560,7 @@ namespace OceanOfCode
             var availables = new List<MapCell> { left, right, top, bot };
             foreach (var i in availables)
             {
-                if (i != null && i.CanGoHere)
+                if (i != null && ((useVisited && i.CanGoHere) || !useVisited))
                 {
                     var n = openList.Find(c => c.Position == i.Position);
                     if (n == null) list.Add(i);
