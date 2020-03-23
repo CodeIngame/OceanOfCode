@@ -626,7 +626,7 @@ namespace OceanOfCode
             }
 
             string sonarResult = Helpers.ReadLine(debug: false);
-            string opponentOrders = Helpers.ReadLine(debug: false);
+            string opponentOrders = Helpers.ReadLine(debug: true);
 
             // On enregistre le précédent déplacement
             if (opponentOrders != "NA")
@@ -1363,29 +1363,52 @@ namespace OceanOfCode
         public static Instruction ToInstructions(this string move, Instruction instruction)
         {
             Console.Error.Write($"ToInstructions Ep {instruction.EstimatedPosition}");
-            // TORPEDO 0 5|MOVE N TORPEDO
             // MOVE N TORPEDO
-            // MOVE E TORPEDO
             // TORPEDO 0 8|MOVE E TORPEDO
+            // SURFACE 5 | MOVE W
             // MOVE E| TORPEDO 8 6
             // SURFACE 7
             var input = move;
+
+            Action<string[], Direction> setInstructionSurface = (string[] cmd, Direction d) =>
+            {
+                instruction.Direction = d;
+                instruction.Command = input;
+                var secteur = int.Parse(cmd[1]);
+                if (instruction.EstimatedPosition.Section != secteur)
+                {
+                    var middle = secteur.ToMidleSectionPosition();
+                    instruction.EstimatedPosition = new EstimatedPosition(middle) { XPrecision = 3, YPrecision = 3 };
+
+                }
+            };
 
             var multiOrders = move.Contains("|");
             if (multiOrders)
             {
                 var inputs = move.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
                 var startByMove = inputs[0].Contains("MOVE");
-
-
-                // Device
                 var attack = inputs[startByMove ? 1 : 0].Split(' ');
-                //Console.Error.WriteLine(attack[0]);
                 var parsed = Enum.TryParse<DeviceType>(attack[0].ToPascalCase(), out var deviceType);
-                instruction.DeviceUsed = deviceType;
-                instruction.DeviceUsedPosition = new Position { X = int.Parse(attack[1]), Y = int.Parse(attack[2]) };
 
+
+                if(parsed)
+                {
+                    instruction.DeviceUsed = deviceType;
+                    instruction.DeviceUsedPosition = new Position { X = int.Parse(attack[1]), Y = int.Parse(attack[2]) };
+                } 
+                else
+                {
+                    // c'est surment une surface
+                    var surfaceParsed = Enum.TryParse<Direction>(attack[0].ToPascalCase(), out var directionSurface);
+                    if(surfaceParsed)
+                    {
+                        setInstructionSurface(attack, directionSurface);
+                    }
+                }
                 input = inputs[startByMove ? 0 : 1];
+
+
             }
 
             if (!input.Contains("SURFACE"))
@@ -1409,18 +1432,7 @@ namespace OceanOfCode
             if (input.Contains("SURFACE"))
             {
                 var s = input.Split(' ');
-                instruction.Direction = Direction.Surface;
-                instruction.Command = input;
-                var secteur = int.Parse(s[1]);
-
-                if (instruction.EstimatedPosition.Section != secteur)
-                {
-                    var middle = secteur.ToMidleSectionPosition();
-                    instruction.EstimatedPosition = new EstimatedPosition(middle) { XPrecision = 3, YPrecision = 3 };
-                    //p.LastEstimatedPosition = instruction.EstimatedPosition;
-                    // Console.Error.WriteLine("Estimated position updated");
-                }
-
+                setInstructionSurface(s, Direction.Surface);
             }
 
 
