@@ -191,7 +191,7 @@ namespace OceanOfCode
 
         public override string ToString()
         {
-            if(XPrecision != -1 && YPrecision != -1)
+            if (XPrecision != -1 && YPrecision != -1)
                 return $"{{{X}:{Y}}} precision: {XPrecision}:{YPrecision}";
 
             return base.ToString();
@@ -215,7 +215,7 @@ namespace OceanOfCode
         /// </summary>
         public Position Position { get; set; } = new Position();
 
-     
+
 
         /// <summary>
         /// Le nombre de point de vie
@@ -245,8 +245,8 @@ namespace OceanOfCode
         public List<Instruction> LastInstructions { get; set; } = new List<Instruction>();
         public Instruction LastInstruction
         {
-            get { return LastInstructions.Count > 0 ? LastInstructions[LastInstructions.Count-1] : new Instruction(); }
-            set { LastInstructions[LastInstructions.Count-1] = value; }
+            get { return LastInstructions.Count > 0 ? LastInstructions[LastInstructions.Count - 1] : new Instruction(); }
+            set { LastInstructions[LastInstructions.Count - 1] = value; }
         }
 
         public List<int> HealthPointHistoric { get; set; } = new List<int>();
@@ -694,7 +694,7 @@ namespace OceanOfCode
             var enemyLostHp = Enemy.Touched;
             var iLostHp = Me.Touched;
             var enemyTouchedPerfect = Enemy.TouchedPerfect;
-      
+
 
             if (iUsedTorpedo && !enemyUsedToperdo && enemyLostHp)
             {
@@ -711,6 +711,8 @@ namespace OceanOfCode
                 else
                 {
                     _analyseHitCase = "1.2";
+                    Enemy.LastEstimatedPosition.XPrecision = 2;
+                    Enemy.LastEstimatedPosition.YPrecision = 2;
                 }
             }
             else if (iUsedTorpedo && enemyUsedToperdo && enemyLostHp)
@@ -724,24 +726,36 @@ namespace OceanOfCode
                 var distance = myShoot.Distance(enemyShoot);
                 var isCloseShoot = distance <= 2;
                 var hpLost = Enemy.TotalHpLost;
-                Console.Error.Write($" We shoot and touch with perfect: ({enemyTouchedPerfect}) : fake perfect {isCloseShoot}");
-                if (isCloseShoot)
-                    Console.Error.Write($" myShoot: {myShoot} - enemyShoot: {enemyShoot} with hp lost: {hpLost}");
-
-                if (hpLost == 1)
+                //Console.Error.Write($" We shoot and touch with perfect: ({enemyTouchedPerfect}) : fake perfect {isCloseShoot}");
+                //if (isCloseShoot)
+                //    Console.Error.Write($" myShoot: {myShoot} - enemyShoot: {enemyShoot} with hp lost: {hpLost}");
+                if (!isCloseShoot && enemyTouchedPerfect)
                 {
-                    _analyseHitCase = "2.1";
-                    // un seul de nous 2 à bien tirer (moi ?)
+                    _analyseHitCase = "2.0";
+                    var shootPosition = Me.LastInstruction.DeviceUsedPosition;
+                    Enemy.Position = shootPosition;
+                    Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 0, YPrecision = 0 };
                 }
-                else if (hpLost == 2)
+                else
                 {
-                    _analyseHitCase = "2.2";
+                    if (hpLost == 1)
+                    {
+                        // un seul de nous 2 à bien tirer (moi ?)
 
-                }
-                else if (hpLost == 3)
-                {
-                    _analyseHitCase = "2.3";
-                    // Un des 2 a très bien tirer
+                        _analyseHitCase = "2.1";
+                        Enemy.LastEstimatedPosition.XPrecision = 3;
+                        Enemy.LastEstimatedPosition.YPrecision = 3;
+                    }
+                    else if (hpLost == 2)
+                    {
+                        _analyseHitCase = "2.2";
+
+                    }
+                    else if (hpLost == 3)
+                    {
+                        _analyseHitCase = "2.3";
+                        // Un des 2 a très bien tirer
+                    }
                 }
 
             }
@@ -772,9 +786,10 @@ namespace OceanOfCode
 
                 var lastDirection = Enemy.LastInstruction.Direction;
                 var lastEstimatedPosition = Enemy.LastEstimatedPosition;
+                var offset = 2;
 
-                var yOffset = lastDirection == Direction.North ? +3 : lastDirection == Direction.South ? -3 : 0;
-                var xOffset = lastDirection == Direction.Est ? +3 : lastDirection == Direction.West ? -3 : 0;
+                var yOffset = lastDirection == Direction.North ? +offset : lastDirection == Direction.South ? -offset : 0;
+                var xOffset = lastDirection == Direction.Est ? +offset : lastDirection == Direction.West ? -offset : 0;
 
                 var newEstimatedPosition = new EstimatedPosition { X = lastEstimatedPosition.X + xOffset, Y = lastEstimatedPosition.Y + yOffset };
                 if (newEstimatedPosition.IsValidPosition(Map))
@@ -800,6 +815,14 @@ namespace OceanOfCode
                     _analyseHitCase = "5.1";
                     Enemy.LastEstimatedPosition = currentEstimatedPosition;
                 }
+            }
+            else if (iUsedTorpedo && !enemyLostHp)
+            {
+                _analyseHitCase = "6";
+
+                // J'ai tiré sans le touché on reset la precision
+                Enemy.LastEstimatedPosition.XPrecision = -1;
+                Enemy.LastEstimatedPosition.YPrecision = -1;
             }
 
             Console.Error.WriteLine($" -> _analyseHitCase: {_analyseHitCase} - EPosition : {(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition)}");
@@ -877,7 +900,7 @@ namespace OceanOfCode
                 else
                 {
                     // On connait pas encore sa positon mais il a fait surface
-                    if(previousInstruction.Direction == Direction.Surface)
+                    if (previousInstruction.Direction == Direction.Surface)
                     {
 
                     }
@@ -941,7 +964,7 @@ namespace OceanOfCode
                     var distance = Me.Position.Distance(Enemy.LastEstimatedPosition);
                     if (distance <= Torpedo.Range)
                         cellToAttack = Map[Enemy.LastEstimatedPosition];
-                    else if (distance <= Torpedo.Range + 1)
+                    else if (distance > Torpedo.Range && distance <= Torpedo.Range + 1)
                     {
                         var idealTarget = Enemy.LastEstimatedPosition;
                         var actualPosition = Me.Position;
@@ -1038,7 +1061,7 @@ namespace OceanOfCode
 
             var msg1 = $"PEnemy: {Enemy.Position} - distance: {distance}";
             var msg2 = $"(Estimated) PEnemy: {Enemy.LastEstimatedPosition} - distance: {distance}";
-            var msg = _caseMove.Contains("1.") ? msg1 : _caseMove.Contains("2.") ? msg2 : ""; 
+            var msg = _caseMove.Contains("1.") ? msg1 : _caseMove.Contains("2.") ? msg2 : "";
             Console.Error.WriteLine($" -> Move: {_caseMove} -> {msg}");
 
         }
@@ -1050,7 +1073,7 @@ namespace OceanOfCode
             var myPosition = Me.Position;
 
             // Si on est déjà sur la cible ou si la cible est inatteignable
-            if (myPosition == _targetedPosition || !Map[targetPosition].CanGoHere)
+            if (myPosition == _targetedPosition || Map[targetPosition].CellType == CellType.Island)
             {
                 Console.Error.WriteLine(!Map[targetPosition].CanGoHere ? $"{targetPosition} not accessible" : "I'm still at this position");
                 MoveRandom(instruction, dico);
@@ -1392,16 +1415,16 @@ namespace OceanOfCode
                 var parsed = Enum.TryParse<DeviceType>(attack[0].ToPascalCase(), out var deviceType);
 
 
-                if(parsed)
+                if (parsed)
                 {
                     instruction.DeviceUsed = deviceType;
                     instruction.DeviceUsedPosition = new Position { X = int.Parse(attack[1]), Y = int.Parse(attack[2]) };
-                } 
+                }
                 else
                 {
                     // c'est surment une surface
                     var surfaceParsed = Enum.TryParse<Direction>(attack[0].ToPascalCase(), out var directionSurface);
-                    if(surfaceParsed)
+                    if (surfaceParsed)
                     {
                         setInstructionSurface(attack, directionSurface);
                     }
@@ -1568,8 +1591,8 @@ namespace OceanOfCode
         {
             var list = new List<MapCell>();
             var left = p.X != 0 ? map[p.X - 1, p.Y] : null;
-            var right = p.X != 13 ? map[p.X + 1, p.Y] : null;
-            var bot = p.Y != 13 ? map[p.X, p.Y + 1] : null;
+            var right = p.X != map.Width - 1 ? map[p.X + 1, p.Y] : null;
+            var bot = p.Y != map.Height - 1 ? map[p.X, p.Y + 1] : null;
             var top = p.Y != 0 ? map[p.X, p.Y - 1] : null;
 
             //Console.Error.WriteLine("--");
@@ -1579,15 +1602,24 @@ namespace OceanOfCode
             //Console.Error.WriteLine($" [S: {bot.CanGoHere}, N: {top.CanGoHere}, E: {right.CanGoHere}, W: {left.CanGoHere}]");
             //Console.Error.WriteLine("--");
 
-            var availables = new List<MapCell> { left, right, top, bot };
+            var availables = new List<MapCell> { left, right, top, bot }
+                .Where( c => c != null)
+                .Where(c => (useVisited && c.CanGoHere) || !useVisited)
+                .ToList();
+            
+            // Console.Error.WriteLine($"Availables: {availables.Count}");
+
             foreach (var i in availables)
             {
-                if (i != null && ((useVisited && i.CanGoHere) || !useVisited))
-                {
+                //Console.Error.WriteLine($"looking for: {i?.Position}");
+
+                //if (i != null && ((useVisited && i.CanGoHere) || !useVisited))
+                //{
+                    // Console.Error.WriteLine($"Adding: {i?.Position}");
                     var n = openList.Find(c => c.Position == i.Position);
                     if (n == null) list.Add(i);
                     else list.Add(n);
-                }
+                //}
             }
 
             return list;
