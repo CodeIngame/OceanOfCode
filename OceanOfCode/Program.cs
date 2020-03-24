@@ -498,7 +498,7 @@ namespace OceanOfCode
                 row.ForEach(c =>
                 {
                     var sectionNumber = c.Position.Section;
-                    var isEmpty = c.CellType == CellType.Empty;
+                    var isEmpty = c.CellType == CellType.Empty && !c.Visited;
 
                     if (!dico.ContainsKey(sectionNumber))
                         dico.Add(sectionNumber, new List<MapCell>());
@@ -1056,7 +1056,10 @@ namespace OceanOfCode
             else
             {
                 _caseMove = "3";
-                MoveToPosition(instruction, dico, new Position { X = 7, Y = 7 });
+                var empty = EmptyCell();
+                MoveToPosition(instruction, dico, empty.Position);
+
+                // MoveToPosition(instruction, dico, new Position { X = 7, Y = 7 });
             }
 
             var msg1 = $"PEnemy: {Enemy.Position} - distance: {distance}";
