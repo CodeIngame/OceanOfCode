@@ -948,46 +948,63 @@ namespace OceanOfCode
             // il faut tirer et regarder au prochain coups si on a touché quelque chose
             // on combine le tout avec les derniers déplacement pour localiser la position de quelqu'un
 
+            UseTorpedo(instruction);
+
+        }
+
+        private void UseTorpedo(Instruction instruction)
+        {
+            var _useTorpedo = "0";
+            var associatedMessage = string.Empty;
+            Console.Error.Write($"UseTorpedo");
             if (Me.Torpedo.CanUse())
             {
                 MapCell cellToAttack = null;
                 if (Enemy.Position.Known)
                 {
+                    _useTorpedo = "1";
                     var distance = Me.Position.Distance(Enemy.Position);
                     if (distance <= Torpedo.Range)
                         cellToAttack = Map[Enemy.Position];
 
-                    Console.Error.WriteLine($"[A] Position know - distance:{distance}");
+                    associatedMessage = $"[A] Position know - distance:{distance}";
                 }
                 else if (Enemy.LastEstimatedPosition.Known)
                 {
+                    _useTorpedo = "2";
                     var distance = Me.Position.Distance(Enemy.LastEstimatedPosition);
                     if (distance <= Torpedo.Range)
+                    {
+                        _useTorpedo = "2.1";
                         cellToAttack = Map[Enemy.LastEstimatedPosition];
+
+                    }
                     else if (distance > Torpedo.Range && distance <= Torpedo.Range + 1)
                     {
+                        _useTorpedo = "2.2";
                         var idealTarget = Enemy.LastEstimatedPosition;
                         var actualPosition = Me.Position;
                         var lastPath = PathFinder.FindPath(actualPosition, idealTarget, Map, false);
-                        cellToAttack = lastPath[lastPath.Count - 2];
+                        if(lastPath.Count >= 2)
+                            cellToAttack = lastPath[lastPath.Count - 2];
                     }
 
-                    Console.Error.WriteLine($"[A] Estimated Position know - distance:{distance}");
+                    associatedMessage = $"[A] Estimated Position know - distance:{distance}";
 
                 }
                 else
                 {
-                    //direction = instruction.Direction;
-                    //cellToAttack = MapCell(PlayerType.Me, direction, Torpedo.Range);
-                    //Console.Error.WriteLine("[A] Random shoot");
+                    _useTorpedo = "3";
+                   
                 }
 
 
                 // On se se tire pas dessus !
                 if (cellToAttack != null && (cellToAttack.Position == Me.Position || cellToAttack.Position.Distance(Me.Position) <= 2)) //&& Me.HealthPoint < Enemy.HealthPoint)
                 {
+                    _useTorpedo = "4";
                     cellToAttack = null;
-                    Console.Error.WriteLine("[A] Canceled shoot");
+                    associatedMessage = $"[A] Canceled shoot";
 
                 }
 
@@ -996,10 +1013,13 @@ namespace OceanOfCode
                 {
                     instruction.DeviceUsed = DeviceType.Torpedo;
                     instruction.DeviceUsedPosition = cellToAttack.Position;
-                    Console.Error.WriteLine($"Me: {Me.Position} shoot -> {cellToAttack.Position}");
+                    associatedMessage += $" -- Me: {Me.Position} shoot -> {cellToAttack.Position}";
+                    // Console.Error.WriteLine($"Me: {Me.Position} shoot -> {cellToAttack.Position}");
                 }
 
             }
+            Console.Error.Write($"-> _useTorpedo: {_useTorpedo} - msg: {associatedMessage}");
+
 
         }
 
@@ -1056,10 +1076,9 @@ namespace OceanOfCode
             else
             {
                 _caseMove = "3";
-                var empty = EmptyCell();
-                MoveToPosition(instruction, dico, empty.Position);
-
-                // MoveToPosition(instruction, dico, new Position { X = 7, Y = 7 });
+                // var empty = EmptyCell();
+                // MoveToPosition(instruction, dico, empty.Position);
+                MoveToPosition(instruction, dico, new Position { X = 7, Y = 7 });
             }
 
             var msg1 = $"PEnemy: {Enemy.Position} - distance: {distance}";
