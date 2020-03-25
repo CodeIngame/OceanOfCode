@@ -6,6 +6,8 @@ using System.IO;
 using System.Text;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.Serialization.Formatters.Binary;
+using System.Threading.Tasks;
 
 namespace OceanOfCode
 {
@@ -20,13 +22,13 @@ namespace OceanOfCode
             while (true)
             {
                 gameManager.SetPlayersInformations();
-                gameManager.WritePosition();
                 gameManager.Play();
             }
         }
     }
 
     #region Models
+    [Serializable]
     public class Map
     {
         /// <summary>
@@ -60,8 +62,10 @@ namespace OceanOfCode
             });
             return mapTxt.ToString();
         }
-    }
 
+
+    }
+    [Serializable]
     public class MapCell
     {
         /// <summary>
@@ -76,7 +80,8 @@ namespace OceanOfCode
         /// <summary>
         /// Pour la recherche de chemin il faut un parent
         /// </summary>
-        public MapCell Parent { get; set; }
+        [NonSerialized()]
+        public MapCell Parent;
 
         public bool CanGoHere => !Visited && CellType == CellType.Empty;
         /// <summary>
@@ -89,12 +94,9 @@ namespace OceanOfCode
         /// </summary>
         public CellType CellType => Cell.ToCellType();
     }
-
-    public class Position
+    [Serializable]
+    public class PositionFinder
     {
-        public int X { get; set; } = -1;
-        public int Y { get; set; } = -1;
-
         /// <summary>
         /// La somme de g + h
         /// </summary>
@@ -107,6 +109,16 @@ namespace OceanOfCode
         /// La distance entre ce point et la cible
         /// </summary>
         public int H { get; set; }
+
+    }
+    [Serializable]
+    public class Position
+        : PositionFinder
+    {
+        public int X { get; set; } = -1;
+        public int Y { get; set; } = -1;
+
+
 
         public Position()
         {
@@ -286,9 +298,22 @@ namespace OceanOfCode
         /// La direction demandée
         /// </summary>
         public Direction Direction { get; set; } = Direction.None;
-        public DeviceType DeviceUsed { get; set; } = DeviceType.None;
-        public Position DeviceUsedPosition { get; set; }
-        public DeviceType DeviceLoad { get; set; } = DeviceType.None;
+        /// <summary>
+        /// L'arme utilisé
+        /// </summary>
+        public DeviceType Device { get; set; } = DeviceType.None;
+        /// <summary>
+        /// La position du tire de l'arme
+        /// </summary>
+        public Position DevicePosition { get; set; }
+        /// <summary>
+        /// L'arme chargé
+        /// </summary>
+        public DeviceType DeviceLoading { get; set; } = DeviceType.None;
+        /// <summary>
+        /// Surface utilisé
+        /// </summary>
+        public bool WithSurface { get; set; } = false;
 
         public EstimatedPosition EstimatedPosition { get; set; } = new EstimatedPosition();
 
@@ -301,22 +326,22 @@ namespace OceanOfCode
         {
             Command = i.Command;
             Direction = i.Direction;
-            DeviceUsed = i.DeviceUsed;
-            DeviceUsedPosition = i.DeviceUsedPosition;
-            DeviceLoad = i.DeviceLoad;
+            Device = i.Device;
+            DevicePosition = i.DevicePosition;
+            DeviceLoading = i.DeviceLoading;
             EstimatedPosition = i.EstimatedPosition;
         }
 
         public override string ToString()
         {
-            return $"D: {DeviceUsed.ToText()} {DeviceUsedPosition} M: {Direction.ToMove()} L: {DeviceLoad.ToText()}";
+            return $"D: {Device.ToText()} {DevicePosition} M: {Direction.ToMove()} L: {DeviceLoading.ToText()}";
         }
 
         public string ToCommand()
         {
-            var attack = DeviceUsed != DeviceType.None ? $"{DeviceUsed.ToText().ToUpper()} {DeviceUsedPosition.Coordonate}|" : "";
-            var move = Direction.ToMove();
-            var load = DeviceLoad != DeviceType.None ? $" {DeviceLoad.ToText().ToUpper()}" : "";
+            var attack = Device != DeviceType.None ? $"{Device.ToText().ToUpper()} {DevicePosition.Coordonate}|" : "";
+            var move = Direction.ToMove() == null ? "SURFACE" : Direction.ToMove();
+            var load = DeviceLoading != DeviceType.None ? $" {DeviceLoading.ToText().ToUpper()}" : "";
 
             var baseMove = $"{move}{load}";
 
@@ -429,10 +454,13 @@ namespace OceanOfCode
         public List<Player> Players { get; set; } = new List<Player> { new Player { PlayerType = PlayerType.Me }, new Player { PlayerType = PlayerType.Enemy } };
         public Map Map { get; set; } = new Map();
 
+        public List<Player> VirtualPlayers { get; set; } = new List<Player>();
+
         /// <summary>
         /// Le nombre de tour
         /// </summary>
         public int Counter { get; set; } = 0;
+        public bool VirtualPlayersUsed { get; set; } = false;
 
         #region Player Methods
         public Player Me => Players.First(p => p.PlayerType == PlayerType.Me);
@@ -496,7 +524,6 @@ namespace OceanOfCode
         public MapCell EmptyCell()
         {
 
-            // Todo
             // Il est important de positionner le navire dans la plus grande étendu d'eau !
 
             // On va récupérer les cellules par section
@@ -531,6 +558,31 @@ namespace OceanOfCode
 
             return dico[sectionToUse][maxEmptyCell / 2];
         }
+        public void BuildVirtualPlayers()
+        {
+            Console.Error.Write("BuildVirtualMaps");
+            int playerId = 10;
+            var yNumber = 0;
+            Map.Maze2D.ForEach(row =>
+            {
+                var xNumber = 0;
+                row.ForEach(c =>
+                {
+                    var isEmpty = c.CellType == CellType.Empty;
+                    if(isEmpty)
+                    {
+                        var position = new Position { X = xNumber, Y = yNumber };
+                        // Console.Error.WriteLine($"Adding virtual player at: {position}");
+                        var player = new Player { PlayerId = playerId, Position = position };
+                        VirtualPlayers.Add(player);
+                        playerId++;
+                    }
+                    xNumber++;
+                });
+                yNumber++;
+            });
+            Console.Error.WriteLine($" -> Done with: {VirtualPlayers.Count}");
+        }
 
         #region Helpers
         public MapCell West(PlayerType pt = PlayerType.Me) => MapCell(pt, Direction.West);
@@ -558,9 +610,7 @@ namespace OceanOfCode
 
             return true;
         }
-
         #endregion
-
 
         #region Ctor & Initialization
         public GameManager()
@@ -588,6 +638,8 @@ namespace OceanOfCode
                     return cell;
                 }).ToList());
             }
+
+            BuildVirtualPlayers();
 
             //Console.Error.WriteLine("--Map saved format--");
             //Console.Error.WriteLine(Map.ToString());
@@ -634,7 +686,7 @@ namespace OceanOfCode
             }
 
             string sonarResult = Helpers.ReadLine(debug: false);
-            string opponentOrders = Helpers.ReadLine(debug: true);
+            string opponentOrders = Helpers.ReadLine(debug: false);
 
             // On enregistre le précédent déplacement
             if (opponentOrders != "NA")
@@ -658,6 +710,7 @@ namespace OceanOfCode
 
         public void Play()
         {
+            Console.Error.WriteLine($"Starting a new turn: {Counter+1}");
             var instruction = new Instruction();
             Analyze(instruction);
             Move(instruction);
@@ -678,8 +731,11 @@ namespace OceanOfCode
         /// <param name="instruction"></param>
         private void Analyze(Instruction instruction)
         {
+            AnalyseCommand(Enemy.LastInstruction);
+
             if (Counter > 1)
             {
+                AnalyseVirtualPlayers();
                 AnalyseToperdo(instruction);
                 AnalyseHitV2(instruction);
                 AnalyseMove(instruction);
@@ -688,7 +744,73 @@ namespace OceanOfCode
         }
 
         #region Analyse Logics
-       
+
+        private void AnalyseCommand(Instruction instruction)
+        {
+            if (string.IsNullOrEmpty(instruction.Command))
+            {
+                Console.Error.WriteLine($"No command to analyse");
+                return;
+            }
+
+            Console.Error.Write($"AnalyseCommand Ep {instruction.EstimatedPosition}");
+            // MOVE direction POWER
+            // MOVE N TORPEDO
+            // MOVE E| TORPEDO 8 6
+            // MOVE E| TORPEDO 8 6
+            // TORPEDO 0 8|MOVE E TORPEDO
+            // SURFACE 5 | MOVE W
+            // SURFACE 7
+
+            var cmd = instruction.Command;
+            foreach (var order in cmd.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                // un déplacement
+                if (order.Contains("MOVE"))
+                {
+                    var orderMove = order.Substring(0, "MOVE N".Length);
+                    switch (order)
+                    {
+                        case "MOVE S": instruction.Direction = Direction.South; break;
+                        case "MOVE N": instruction.Direction = Direction.North; break;
+                        case "MOVE W": instruction.Direction = Direction.West; break;
+                        case "MOVE E": instruction.Direction = Direction.Est; break;
+                    }
+
+                    var loading = order.Substring(orderMove.Length - 1);
+
+                }
+                // une surface
+                else if (order.Contains("SURFACE"))
+                {
+                    var orderSurface = order.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    var secteur = int.Parse(orderSurface[1]);
+                    instruction.WithSurface = true;
+                    if (instruction.EstimatedPosition.Section != secteur)
+                    {
+                        var middle = secteur.ToMidleSectionPosition();
+                        instruction.EstimatedPosition = new EstimatedPosition(middle) { XPrecision = 3, YPrecision = 3 };
+                        Console.Error.Write($" -> Surface set {instruction.EstimatedPosition}");
+                    }
+                }
+                // Un device
+                else
+                {
+                    var ordersDevice = order.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    var parsed = Enum.TryParse<DeviceType>(ordersDevice[0].ToPascalCase(), out var deviceType);
+                    if (parsed)
+                    {
+                        instruction.Device = deviceType;
+                        instruction.DevicePosition = new Position { X = int.Parse(ordersDevice[1]), Y = int.Parse(ordersDevice[2]) };
+                    }
+                }
+            }
+
+          
+            Console.Error.WriteLine($"-> {instruction.EstimatedPosition}");
+            Console.Error.WriteLine($"Instruction decrypted: {instruction}");
+        }
+
         private void AnalyseHitV2(Instruction instruction)
         {
             // Pas d'analyse si la position est connue
@@ -700,8 +822,8 @@ namespace OceanOfCode
             var associatedMessage = string.Empty;
 
             var enemyLostHp = Enemy.Touched;
-            var enemyUsedToperdo = Enemy.LastInstruction.DeviceUsed == DeviceType.Torpedo;
-            var iUsedTorpedo = Me.LastInstruction.DeviceUsed == DeviceType.Torpedo;
+            var enemyUsedToperdo = Enemy.LastInstruction.Device == DeviceType.Torpedo;
+            var iUsedTorpedo = Me.LastInstruction.Device == DeviceType.Torpedo;
             // var enemyTouchedPerfect = Enemy.TouchedPerfect;
 
             if (enemyLostHp && !enemyUsedToperdo && !iUsedTorpedo)
@@ -718,7 +840,7 @@ namespace OceanOfCode
                 {
                     _analyseHitCase = "2.1";
                     associatedMessage = "Auto shoot perfect";
-                    Enemy.Position = new Position(Enemy.LastInstruction.DeviceUsedPosition);
+                    Enemy.Position = new Position(Enemy.LastInstruction.DevicePosition);
 
                 }
                 else
@@ -726,7 +848,7 @@ namespace OceanOfCode
                     _analyseHitCase = "2.2";
                     associatedMessage = "Auto shoot partial";
                     if (Enemy.LastEstimatedPosition.XPrecision > 1 && Enemy.LastEstimatedPosition.YPrecision > 1)
-                        Enemy.LastEstimatedPosition = new EstimatedPosition(Enemy.LastInstruction.DeviceUsedPosition) { XPrecision = 1, YPrecision = 1 };
+                        Enemy.LastEstimatedPosition = new EstimatedPosition(Enemy.LastInstruction.DevicePosition) { XPrecision = 1, YPrecision = 1 };
                     else
                         associatedMessage = "Auto shoot but precision is same (do not reset position)";
                 }
@@ -740,44 +862,44 @@ namespace OceanOfCode
                 {
                     _analyseHitCase = "3.1";
                     associatedMessage = "shoot was perfect";
-                    Enemy.Position = new Position(Me.LastInstruction.DeviceUsedPosition);
-                } 
+                    Enemy.Position = new Position(Me.LastInstruction.DevicePosition);
+                }
                 else
                 {
                     _analyseHitCase = "3.2";
                     associatedMessage = "shoot partial";
-                    Enemy.LastEstimatedPosition = new EstimatedPosition(Me.LastInstruction.DeviceUsedPosition) { XPrecision = 1, YPrecision = 1 };
+                    Enemy.LastEstimatedPosition = new EstimatedPosition(Me.LastInstruction.DevicePosition) { XPrecision = 1, YPrecision = 1 };
                 }
             }
-            else if(enemyLostHp && enemyUsedToperdo && iUsedTorpedo)
+            else if (enemyLostHp && enemyUsedToperdo && iUsedTorpedo)
             {
                 _analyseHitCase = "4";
-                var distance = Me.LastInstruction.DeviceUsedPosition.Distance(Enemy.LastInstruction.DeviceUsedPosition);
-                if(distance > Torpedo.Range)
+                var distance = Me.LastInstruction.DevicePosition.Distance(Enemy.LastInstruction.DevicePosition);
+                if (distance > Torpedo.Range)
                 {
                     _analyseHitCase = "4.1";
                     if (Enemy.TouchedPerfect)
                     {
                         _analyseHitCase = "4.1.2";
                         associatedMessage = "shoot was perfect";
-                        Enemy.Position = new Position(Me.LastInstruction.DeviceUsedPosition);
+                        Enemy.Position = new Position(Me.LastInstruction.DevicePosition);
                     }
                     else
                     {
                         _analyseHitCase = "4.1.2";
                         associatedMessage = "shoot partial";
                         if (Enemy.LastEstimatedPosition.XPrecision > 1 && Enemy.LastEstimatedPosition.YPrecision > 1)
-                            Enemy.LastEstimatedPosition = new EstimatedPosition(Me.LastInstruction.DeviceUsedPosition) { XPrecision = 1, YPrecision = 1 };
+                            Enemy.LastEstimatedPosition = new EstimatedPosition(Me.LastInstruction.DevicePosition) { XPrecision = 1, YPrecision = 1 };
                         else
                             associatedMessage = "shoot partial but precision is same (do not reset position)";
                     }
-                } 
+                }
                 else
                 {
                     _analyseHitCase = "4.2";
 
                     var hpLost = Enemy.TotalHpLost;
-                    if(hpLost == 1)
+                    if (hpLost == 1)
                     {
                         _analyseHitCase = "4.2.1";
                         associatedMessage = $"We shoot togather and he lost {hpLost} hp";
@@ -792,15 +914,16 @@ namespace OceanOfCode
                         _analyseHitCase = "4.2.3";
                     }
                 }
-                   
+
             }
-            else if(!enemyLostHp && iUsedTorpedo)
+            else if (!enemyLostHp && iUsedTorpedo)
             {
                 _analyseHitCase = "5";
                 associatedMessage = "Shoot failed, reset precision";
                 // j'ai raté mon tire..
-                Enemy.LastEstimatedPosition.XPrecision = 4;
-                Enemy.LastEstimatedPosition.YPrecision = 4;
+                Enemy.LastEstimatedPosition = new EstimatedPosition();
+                //Enemy.LastEstimatedPosition.XPrecision = 4;
+                //Enemy.LastEstimatedPosition.YPrecision = 4;
             }
             Console.Error.WriteLine($" -> _analyseHitCase: {_analyseHitCase} - msg: {associatedMessage} new (estimated) Ep: {(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition)}");
 
@@ -829,9 +952,9 @@ namespace OceanOfCode
             if (shouldAnalyse)
             {
                 var lastInstruction = Enemy.LastInstruction;
-                if (lastInstruction.DeviceUsed == DeviceType.Torpedo)
+                if (lastInstruction.Device == DeviceType.Torpedo)
                 {
-                    lastInstruction.EstimatedPosition = new EstimatedPosition(lastInstruction.DeviceUsedPosition);
+                    lastInstruction.EstimatedPosition = new EstimatedPosition(lastInstruction.DevicePosition);
                     lastInstruction.EstimatedPosition.XPrecision = Torpedo.Range;
                     lastInstruction.EstimatedPosition.YPrecision = Torpedo.Range;
 
@@ -882,7 +1005,7 @@ namespace OceanOfCode
                 else
                 {
                     // On connait pas encore sa positon mais il a fait surface
-                    if (previousInstruction.Direction == Direction.Surface)
+                    if (previousInstruction.WithSurface)
                     {
 
                     }
@@ -916,10 +1039,43 @@ namespace OceanOfCode
             }
             Console.Error.WriteLine($" -> _analyseMoveCase: {_analyseMoveCase} -  EPosition : {(Enemy.Position.Known ? Enemy.Position : lastInstruction.EstimatedPosition)}");
         }
+
+        private void AnalyseVirtualPlayers()
+        {
+            var direction = Enemy.LastInstruction.Direction;
+            if (direction == Direction.None)
+                return;
+
+            Console.Error.Write("AnalyseVirtualPlayer");
+
+            var xOffset = direction == Direction.Est ? 1 : direction == Direction.West ? -1 : 0;
+            var yOffset = direction == Direction.South ? 1 : direction == Direction.North ? -1 : 0;
+
+            var playerToRemove = new List<int>();
+            Parallel.ForEach(VirtualPlayers, currentVp =>
+            {
+                if(currentVp.Position.IsValidPosition(Map, yOffset, xOffset)) {
+                    currentVp.Position.X += xOffset;
+                    currentVp.Position.Y += yOffset;
+                } else
+                {
+                    playerToRemove.Add(currentVp.PlayerId);
+                }
+            });
+
+            playerToRemove.ForEach(p => VirtualPlayers.RemoveAll(pp => pp.PlayerId == p));
+
+            Console.Error.WriteLine($" ->  {VirtualPlayers.Count} still in the game");
+            if(VirtualPlayers.Count == 1)
+            {
+                Enemy.Position = VirtualPlayers.First().Position;
+                VirtualPlayersUsed = true;
+            }
+
+        }
         #endregion
 
         #endregion
-
 
         /// <summary>
         /// Attaquer
@@ -929,8 +1085,8 @@ namespace OceanOfCode
 
             // il faut tirer et regarder au prochain coups si on a touché quelque chose
             // on combine le tout avec les derniers déplacement pour localiser la position de quelqu'un
-
-            UseTorpedo(instruction);
+            if (Me.Torpedo.CanUse())
+                UseTorpedo(instruction);
 
         }
 
@@ -939,67 +1095,65 @@ namespace OceanOfCode
             var _useTorpedo = "0";
             var associatedMessage = string.Empty;
             Console.Error.Write($"UseTorpedo");
-            if (Me.Torpedo.CanUse())
+
+            MapCell cellToAttack = null;
+            if (Enemy.Position.Known)
             {
-                MapCell cellToAttack = null;
-                if (Enemy.Position.Known)
+                _useTorpedo = "1";
+                var distance = Me.Position.Distance(Enemy.Position);
+                if (distance <= Torpedo.Range)
+                    cellToAttack = Map[Enemy.Position];
+
+                associatedMessage = $"[A] Position know - distance:{distance}";
+            }
+            else if (Enemy.LastEstimatedPosition.Known)
+            {
+                _useTorpedo = "2";
+                var distance = Me.Position.Distance(Enemy.LastEstimatedPosition);
+                if (distance <= Torpedo.Range)
                 {
-                    _useTorpedo = "1";
-                    var distance = Me.Position.Distance(Enemy.Position);
-                    if (distance <= Torpedo.Range)
-                        cellToAttack = Map[Enemy.Position];
-
-                    associatedMessage = $"[A] Position know - distance:{distance}";
-                }
-                else if (Enemy.LastEstimatedPosition.Known)
-                {
-                    _useTorpedo = "2";
-                    var distance = Me.Position.Distance(Enemy.LastEstimatedPosition);
-                    if (distance <= Torpedo.Range)
-                    {
-                        _useTorpedo = "2.1";
-                        cellToAttack = Map[Enemy.LastEstimatedPosition];
-
-                    }
-                    else if (distance > Torpedo.Range && distance < Torpedo.Range + 2)
-                    {
-                        _useTorpedo = "2.2";
-                        var idealTarget = Enemy.LastEstimatedPosition;
-                        var actualPosition = Me.Position;
-                        var lastPath = PathFinder.FindPath(actualPosition, idealTarget, Map, false);
-                        if(lastPath.Count >= Torpedo.Range)
-                            cellToAttack = lastPath[Torpedo.Range-2];
-                    }
-
-                    associatedMessage = $"[A] Estimated Position know - distance:{distance}";
+                    _useTorpedo = "2.1";
+                    cellToAttack = Map[Enemy.LastEstimatedPosition];
 
                 }
-                else
+                else if (distance > Torpedo.Range && distance < Torpedo.Range + 2)
                 {
-                    _useTorpedo = "3";
-                   
+                    _useTorpedo = "2.2";
+                    var idealTarget = Enemy.LastEstimatedPosition;
+                    var actualPosition = Me.Position;
+                    var lastPath = PathFinder.FindPath(actualPosition, idealTarget, Map, false);
+                    if (lastPath.Count >= Torpedo.Range)
+                        cellToAttack = lastPath[Torpedo.Range - 2];
                 }
 
-
-                // On se se tire pas dessus !
-                if (cellToAttack != null && (cellToAttack.Position == Me.Position || cellToAttack.Position.Distance(Me.Position) <= 2)) //&& Me.HealthPoint < Enemy.HealthPoint)
-                {
-                    _useTorpedo = "4";
-                    cellToAttack = null;
-                    associatedMessage = $"[A] Canceled shoot";
-
-                }
-
-
-                if (cellToAttack != null)
-                {
-                    instruction.DeviceUsed = DeviceType.Torpedo;
-                    instruction.DeviceUsedPosition = cellToAttack.Position;
-                    associatedMessage += $" -- Me: {Me.Position} shoot -> {cellToAttack.Position}";
-                    // Console.Error.WriteLine($"Me: {Me.Position} shoot -> {cellToAttack.Position}");
-                }
+                associatedMessage = $"[A] Estimated Position know - distance:{distance}";
 
             }
+            else
+            {
+                _useTorpedo = "3";
+
+            }
+
+
+            // On se se tire pas dessus !
+            if (cellToAttack != null && (cellToAttack.Position == Me.Position || cellToAttack.Position.Distance(Me.Position) <= 2)) //&& Me.HealthPoint < Enemy.HealthPoint)
+            {
+                _useTorpedo = "4";
+                cellToAttack = null;
+                associatedMessage = $"[A] Canceled shoot";
+
+            }
+
+
+            if (cellToAttack != null)
+            {
+                instruction.Device = DeviceType.Torpedo;
+                instruction.DevicePosition = cellToAttack.Position;
+                associatedMessage += $" -- Me: {Me.Position} shoot -> {cellToAttack.Position}";
+                // Console.Error.WriteLine($"Me: {Me.Position} shoot -> {cellToAttack.Position}");
+            }
+
             Console.Error.Write($"-> _useTorpedo: {_useTorpedo} - msg: {associatedMessage}");
 
 
@@ -1098,7 +1252,8 @@ namespace OceanOfCode
                 else
                 {
                     Console.Error.WriteLine(" No move -> Surface");
-                    instruction.Direction = Direction.Surface;
+                    instruction.Direction = Direction.None;
+                    instruction.WithSurface = true;
                     ResetVisitedCells();
                     Map[myPosition].Visited = true;
                     // MoveRandom(instruction, dico);
@@ -1183,7 +1338,8 @@ namespace OceanOfCode
                     direction = Direction.West;
                 else
                 {
-                    direction = Direction.Surface;
+                    direction = Direction.None;
+                    instruction.WithSurface = true;
                     ResetVisitedCells();
                     Map[Me.Position].Visited = true;
                 }
@@ -1210,7 +1366,7 @@ namespace OceanOfCode
         {
 
             if (Me.Torpedo.Couldown > 0)
-                instruction.DeviceLoad = DeviceType.Torpedo;
+                instruction.DeviceLoading = DeviceType.Torpedo;
 
             //if (Me.Sonar.Couldown < 0)
             //    actions += " SONAR";
@@ -1244,6 +1400,18 @@ namespace OceanOfCode
             }
 
             return msg;
+        }
+
+        public static T DeepClone<T>(this T obj)
+        {
+            using (var ms = new MemoryStream())
+            {
+                var formatter = new BinaryFormatter();
+                formatter.Serialize(ms, obj);
+                ms.Position = 0;
+
+                return (T)formatter.Deserialize(ms);
+            }
         }
     }
 
@@ -1373,11 +1541,21 @@ namespace OceanOfCode
                 case Direction.North: return "MOVE N";
                 case Direction.West: return "MOVE W";
                 case Direction.Est: return "MOVE E";
-
-                case Direction.Surface: return "SURFACE";
-
             }
             return null;
+        }
+
+        public static Direction ToInverse(this Direction direction)
+        {
+            switch (direction)
+            {
+                case Direction.South: return Direction.North;
+                case Direction.North: return Direction.South;
+                case Direction.West: return Direction.Est;
+                case Direction.Est: return Direction.West;
+
+            }
+            return Direction.North;
         }
     }
 
@@ -1390,83 +1568,9 @@ namespace OceanOfCode
         /// <returns></returns>
         public static Instruction ToInstructions(this string move, Instruction instruction)
         {
-            Console.Error.Write($"ToInstructions Ep {instruction.EstimatedPosition}");
-            // MOVE N TORPEDO
-            // TORPEDO 0 8|MOVE E TORPEDO
-            // SURFACE 5 | MOVE W
-            // MOVE E| TORPEDO 8 6
-            // SURFACE 7
-            var input = move;
 
-
-            Action<string[], Direction> setInstructionSurface = (string[] cmd, Direction d) =>
-            {
-                instruction.Direction = d;
-                instruction.Command = input;
-                var secteur = int.Parse(cmd[1]);
-                if (instruction.EstimatedPosition.Section != secteur)
-                {
-                    var middle = secteur.ToMidleSectionPosition();
-                    instruction.EstimatedPosition = new EstimatedPosition(middle) { XPrecision = 3, YPrecision = 3 };
-
-                }
-            };
-
-            var multiOrders = move.Contains("|");
-            if (multiOrders)
-            {
-                var inputs = move.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
-                var startByMove = inputs[0].Contains("MOVE");
-                var attack = inputs[startByMove ? 1 : 0].Split(' ');
-                var parsed = Enum.TryParse<DeviceType>(attack[0].ToPascalCase(), out var deviceType);
-
-
-                if (parsed)
-                {
-                    instruction.DeviceUsed = deviceType;
-                    instruction.DeviceUsedPosition = new Position { X = int.Parse(attack[1]), Y = int.Parse(attack[2]) };
-                }
-                else
-                {
-                    // c'est surment une surface
-                    var surfaceParsed = Enum.TryParse<Direction>(attack[0].ToPascalCase(), out var directionSurface);
-                    if (surfaceParsed)
-                    {
-                        setInstructionSurface(attack, directionSurface);
-                    }
-                }
-                input = inputs[startByMove ? 0 : 1];
-
-
-            }
-
-            if (!input.Contains("SURFACE"))
-            {
-
-                var moveUsed = input.Substring(0, "MOVE E".Length);
-
-                switch (moveUsed)
-                {
-                    case "MOVE S": instruction.Direction = Direction.South; break;
-                    case "MOVE N": instruction.Direction = Direction.North; break;
-                    case "MOVE W": instruction.Direction = Direction.West; break;
-                    case "MOVE E": instruction.Direction = Direction.Est; break;
-                }
-
-                var loadedDevice = input.Substring(moveUsed.Length);
-                var parsedLoad = Enum.TryParse<DeviceType>(loadedDevice.ToPascalCase(), out var deviceTypeLoaded);
-                instruction.DeviceLoad = deviceTypeLoaded;
-            }
-
-            if (input.Contains("SURFACE"))
-            {
-                var s = input.Split(' ');
-                setInstructionSurface(s, Direction.Surface);
-            }
-
-
-            Console.Error.WriteLine($"-> {instruction.EstimatedPosition}");
-            Console.Error.WriteLine($"Instruction decrypted: {instruction}");
+            instruction.Command = move;
+            // Console.Error.WriteLine($"ToInstructions set command: {instruction.Command}");
             return instruction;
 
         }
@@ -1609,10 +1713,10 @@ namespace OceanOfCode
             //Console.Error.WriteLine("--");
 
             var availables = new List<MapCell> { left, right, top, bot }
-                .Where( c => c != null)
+                .Where(c => c != null)
                 .Where(c => (useVisited && c.CanGoHere) || !useVisited)
                 .ToList();
-            
+
             // Console.Error.WriteLine($"Availables: {availables.Count}");
 
             foreach (var i in availables)
@@ -1621,10 +1725,10 @@ namespace OceanOfCode
 
                 //if (i != null && ((useVisited && i.CanGoHere) || !useVisited))
                 //{
-                    // Console.Error.WriteLine($"Adding: {i?.Position}");
-                    var n = openList.Find(c => c.Position == i.Position);
-                    if (n == null) list.Add(i);
-                    else list.Add(n);
+                // Console.Error.WriteLine($"Adding: {i?.Position}");
+                var n = openList.Find(c => c.Position == i.Position);
+                if (n == null) list.Add(i);
+                else list.Add(n);
                 //}
             }
 
@@ -1685,7 +1789,7 @@ namespace OceanOfCode
         Est = 2,
         North = 3,
         South = 4,
-        Surface = 99
+        // Surface = 99
     }
 
     public enum PositionToTake
@@ -1698,155 +1802,3 @@ namespace OceanOfCode
 
     #endregion
 }
-
-
-#region Poubelle
-//private void AnalyseHit(Instruction instruction)
-//{
-//    if (Enemy.Position.Known)
-//        return;
-
-//    Console.Error.Write($"AnalyseHit Ep: {(Enemy.Position.Known ? Enemy.Position : Enemy.LastInstruction.EstimatedPosition)}");
-//    var _analyseHitCase = "0";
-
-//    var enemyUsedToperdo = Enemy.LastInstruction.DeviceUsed == DeviceType.Torpedo;
-//    var iUsedTorpedo = Me.LastInstruction.DeviceUsed == DeviceType.Torpedo;
-
-//    var enemyLostHp = Enemy.Touched;
-//    var iLostHp = Me.Touched;
-//    var enemyTouchedPerfect = Enemy.TouchedPerfect;
-
-
-//    if (iUsedTorpedo && !enemyUsedToperdo && enemyLostHp)
-//    {
-//        _analyseHitCase = "1";
-//        // J'ai tiré et il n'a pa tiré -> l'enemi à perdu des points de vie
-//        var shootPosition = Me.LastInstruction.DeviceUsedPosition;
-//        Console.Error.WriteLine($"I shoot and touch with perfect: ({enemyTouchedPerfect})");
-//        if (enemyTouchedPerfect)
-//        {
-//            _analyseHitCase = "1.1";
-//            Enemy.Position = shootPosition;
-//            Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 0, YPrecision = 0 };
-//        }
-//        else
-//        {
-//            _analyseHitCase = "1.2";
-//            Enemy.LastEstimatedPosition.XPrecision = 2;
-//            Enemy.LastEstimatedPosition.YPrecision = 2;
-//        }
-//    }
-//    else if (iUsedTorpedo && enemyUsedToperdo && enemyLostHp)
-//    {
-//        _analyseHitCase = "2";
-
-//        // Nous avons tiré -> l'enemi à perdu des points de vie
-//        // Attention si on tire tous les 2 avec un tires sur l'enemi il peut perdre 2hp mais ça ne sera pas un perfect
-//        var enemyShoot = Enemy.LastInstruction.DeviceUsedPosition;
-//        var myShoot = Me.LastInstruction.DeviceUsedPosition;
-//        var distance = myShoot.Distance(enemyShoot);
-//        var isCloseShoot = distance <= 2;
-//        var hpLost = Enemy.TotalHpLost;
-//        //Console.Error.Write($" We shoot and touch with perfect: ({enemyTouchedPerfect}) : fake perfect {isCloseShoot}");
-//        //if (isCloseShoot)
-//        //    Console.Error.Write($" myShoot: {myShoot} - enemyShoot: {enemyShoot} with hp lost: {hpLost}");
-//        if (!isCloseShoot && enemyTouchedPerfect)
-//        {
-//            _analyseHitCase = "2.0";
-//            var shootPosition = Me.LastInstruction.DeviceUsedPosition;
-//            Enemy.Position = shootPosition;
-//            Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 0, YPrecision = 0 };
-//        }
-//        else
-//        {
-//            if (hpLost == 1)
-//            {
-//                // un seul de nous 2 à bien tirer (moi ?)
-
-//                _analyseHitCase = "2.1";
-//                Enemy.LastEstimatedPosition.XPrecision = 3;
-//                Enemy.LastEstimatedPosition.YPrecision = 3;
-//            }
-//            else if (hpLost == 2)
-//            {
-//                _analyseHitCase = "2.2";
-
-//            }
-//            else if (hpLost == 3)
-//            {
-//                _analyseHitCase = "2.3";
-//                // Un des 2 a très bien tirer
-//            }
-//        }
-
-//    }
-//    else if (!iUsedTorpedo && enemyUsedToperdo && enemyLostHp)
-//    {
-//        _analyseHitCase = "3";
-
-//        //Il a tiré -> il a perdu des points de vie
-//        var shootPosition = Enemy.LastInstruction.DeviceUsedPosition;
-//        if (enemyTouchedPerfect)
-//        {
-//            _analyseHitCase = "3.1";
-//            //Il s'est tiré dessus parfaitement c'est con ^^
-//            // Console.Error.WriteLine($"Auto kill: ({shootPosition})");
-//            Enemy.Position = shootPosition;
-//            Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 0, YPrecision = 0 };
-//        }
-//        else
-//        {
-//            _analyseHitCase = "3.2";
-//            // Console.Error.WriteLine($"Auto kill, he is close to ({shootPosition})");
-//            Enemy.LastEstimatedPosition = new EstimatedPosition(shootPosition) { XPrecision = 1, YPrecision = 1 };
-//        }
-//    }
-//    else if (enemyUsedToperdo && !enemyLostHp && !iLostHp)
-//    {
-//        _analyseHitCase = "4";
-
-//        var lastDirection = Enemy.LastInstruction.Direction;
-//        var lastEstimatedPosition = Enemy.LastEstimatedPosition;
-//        var offset = 2;
-
-//        var yOffset = lastDirection == Direction.North ? +offset : lastDirection == Direction.South ? -offset : 0;
-//        var xOffset = lastDirection == Direction.Est ? +offset : lastDirection == Direction.West ? -offset : 0;
-
-//        var newEstimatedPosition = new EstimatedPosition { X = lastEstimatedPosition.X + xOffset, Y = lastEstimatedPosition.Y + yOffset };
-//        if (newEstimatedPosition.IsValidPosition(Map))
-//        {
-//            _analyseHitCase = "4.1";
-//            // Console.Error.WriteLine($"Random shoot - position updated to: {newEstimatedPosition}");
-//            Enemy.LastEstimatedPosition = newEstimatedPosition;
-//        }
-
-
-
-//    }
-//    else if (iUsedTorpedo && !enemyUsedToperdo && !enemyLostHp && Enemy.LastEstimatedPosition.Known)
-//    {
-//        _analyseHitCase = "5";
-//        // J'ai tiré a coté on décale de 2 le tire dans la directio opposé de la mienne
-//        var currentEstimatedPosition = new EstimatedPosition(Enemy.LastEstimatedPosition);
-//        var myDirection = Me.LastInstruction.Direction;
-//        currentEstimatedPosition = new EstimatedPosition(currentEstimatedPosition.PositionToTake(myDirection));
-
-//        if (currentEstimatedPosition.IsValidPosition(Map))
-//        {
-//            _analyseHitCase = "5.1";
-//            Enemy.LastEstimatedPosition = currentEstimatedPosition;
-//        }
-//    }
-//    else if (iUsedTorpedo && !enemyLostHp)
-//    {
-//        _analyseHitCase = "6";
-
-//        // J'ai tiré sans le touché on reset la precision
-//        Enemy.LastEstimatedPosition.XPrecision = -1;
-//        Enemy.LastEstimatedPosition.YPrecision = -1;
-//    }
-
-//    Console.Error.WriteLine($" -> _analyseHitCase: {_analyseHitCase} - EPosition : {(Enemy.Position.Known ? Enemy.Position : Enemy.LastEstimatedPosition)}");
-
-//}
-#endregion

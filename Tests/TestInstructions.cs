@@ -28,4 +28,13 @@ namespace Tests
 
         }
     }
+
+    public enum DeviceType
+    {
+        None = 0,
+        Torpedo = 1,
+        Sonar = 2,
+        Silence = 3,
+        Mine = 4
+    }
 }
