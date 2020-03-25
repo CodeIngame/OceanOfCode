@@ -48,3 +48,14 @@ Mais le surfacing a un impact majeur : votre adversaire saura dans quel secteur 
 Une torpille nécessite 3 actions de charge pour être prête. Lorsqu'elle est complètement chargée, la torpille peut être tirée à une position arbitraire dans l'eau, dans un rayon de 4 cellules.
 Cela permet à la torpille de contenir les coins et de contourner les îles, mais pas de les traverser.
 Les dégâts de l'explosion sont de 2 sur la cellule elle-même et de 1 sur tous les voisins (y compris les diagonales).
+
+##Sonar
+
+Le sonar nécessite 4 actions de charge pour se charger. Il permet de vérifier, si le sous-marin de l'adversaire se trouve dans un secteur donné.
+Vous obtiendrez la réponse à votre prochain tour. Il s'agit du moment où vous donnez l'ordre, et non pas après que l'adversaire ait bougé.
+
+##Silence
+
+Le silence nécessite 6 actions de charge pour être chargé.
+Cela vous permet de déplacer de 0 à 4 cellules dans une direction donnée (sans visiter les cellules ou les îles déjà visitées).
+Votre adversaire ne saura pas dans quelle direction ni jusqu'où vous vous êtes déplacé.

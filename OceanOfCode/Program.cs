@@ -379,11 +379,20 @@ namespace OceanOfCode
             Range = 4;
         }
 
+        /// <summary>
+        /// La position du tire
+        /// </summary>
+        public Position Position { get; set; }
+
         public override bool CanUse()
         {
             return Couldown == 0;
         }
 
+        /// <summary>
+        /// Il faut donner la position X, Y
+        /// </summary>
+        /// <returns></returns>
         public override string Use()
         {
             return "TORPEDO {0} {1}|";
@@ -398,14 +407,20 @@ namespace OceanOfCode
             DeviceType = DeviceType.Sonar;
         }
 
+        public int Sector { get; set; }
+
         public override bool CanUse()
         {
-            throw new NotImplementedException();
+            return Couldown == 0;
         }
 
+        /// <summary>
+        /// Il faut donner le secteur
+        /// </summary>
+        /// <returns></returns>
         public override string Use()
         {
-            throw new NotImplementedException();
+            return "SONAR {0}|";
         }
     }
 
@@ -434,16 +449,24 @@ namespace OceanOfCode
         public Silence()
         {
             DeviceType = DeviceType.Silence;
+            Range = 4;
         }
+
+        public int Distance { get; set; }
+        public Direction Direction { get; set; }
 
         public override bool CanUse()
         {
-            throw new NotImplementedException();
+            return Couldown == 0;
         }
 
+        /// <summary>
+        /// Il faut donner la direction puis la distance
+        /// </summary>
+        /// <returns></returns>
         public override string Use()
         {
-            throw new NotImplementedException();
+            return "SILENCE {0} {1}|";
         }
     }
     #endregion
@@ -523,9 +546,7 @@ namespace OceanOfCode
         }
         public MapCell EmptyCell()
         {
-
             // Il est important de positionner le navire dans la plus grande étendu d'eau !
-
             // On va récupérer les cellules par section
             var dico = new Dictionary<int, List<MapCell>>();
             Map.Maze2D.ForEach(row =>
@@ -707,7 +728,6 @@ namespace OceanOfCode
             //    Console.Error.WriteLine($"Enemy position is :{Enemy.LastEstimatedPosition}");
         }
 
-
         public void Play()
         {
             Console.Error.WriteLine($"Starting a new turn: {Counter+1}");
@@ -761,6 +781,8 @@ namespace OceanOfCode
             // TORPEDO 0 8|MOVE E TORPEDO
             // SURFACE 5 | MOVE W
             // SURFACE 7
+            // MOVE W TORPEDO|TORPEDO 2 11|SONAR 4|SILENCE W 4
+            // TODO
 
             var cmd = instruction.Command;
             foreach (var order in cmd.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries))
@@ -793,8 +815,13 @@ namespace OceanOfCode
                         Console.Error.Write($" -> Surface set {instruction.EstimatedPosition}");
                     }
                 }
+                //
+                else if(order.Contains("SILENCE"))
+                {
+                    instruction.Device = DeviceType.Silence;
+                }
                 // Un device
-                else
+                else if(order.Contains("TOPERDO"))
                 {
                     var ordersDevice = order.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                     var parsed = Enum.TryParse<DeviceType>(ordersDevice[0].ToPascalCase(), out var deviceType);
@@ -803,6 +830,10 @@ namespace OceanOfCode
                         instruction.Device = deviceType;
                         instruction.DevicePosition = new Position { X = int.Parse(ordersDevice[1]), Y = int.Parse(ordersDevice[2]) };
                     }
+                }
+                else
+                {
+                    Console.Error.Write($" -> order not implemented: {order}");
                 }
             }
 
@@ -1077,6 +1108,7 @@ namespace OceanOfCode
 
         #endregion
 
+        #region Use Device
         /// <summary>
         /// Attaquer
         /// </summary>
@@ -1158,9 +1190,10 @@ namespace OceanOfCode
 
 
         }
+        #endregion
+
 
         #region Move
-
         /// <summary>
         /// Déplacer
         /// </summary>
@@ -1364,12 +1397,30 @@ namespace OceanOfCode
         /// </summary>
         private void LoadDevice(Instruction instruction)
         {
+            //Todo voir les priorités de chargement
+
+            Console.Error.WriteLine($"LoadDevice -> silence: {Me.Silence.Couldown}, torpedo: {Me.Torpedo.Couldown}, silence: {Me.Sonar.Couldown}");
+
+            if (Me.Silence.Couldown > 0)
+            {
+                instruction.DeviceLoading = DeviceType.Silence;
+                return;
+            }
 
             if (Me.Torpedo.Couldown > 0)
+            {
                 instruction.DeviceLoading = DeviceType.Torpedo;
+                return;
+            }
 
-            //if (Me.Sonar.Couldown < 0)
-            //    actions += " SONAR";
+            if (Me.Sonar.Couldown > 0)
+            {
+                instruction.DeviceLoading = DeviceType.Sonar;
+                return;
+            }
+
+            // WTF
+            // Console.WriteLine("MOVE W TORPEDO|TORPEDO 2 11|SONAR 4|SILENCE W 4");
 
         }
         #endregion
@@ -1778,6 +1829,7 @@ namespace OceanOfCode
         None = 0,
         Torpedo = 1,
         Sonar = 2,
+        // Permet de se déplacer de 1 à 4 cases sans en informer l'enemie
         Silence = 3,
         Mine = 4
     }
