@@ -28,7 +28,6 @@ namespace OceanOfCode
     }
 
     #region Models
-    [Serializable]
     public class Map
     {
         /// <summary>
@@ -65,7 +64,7 @@ namespace OceanOfCode
 
 
     }
-    [Serializable]
+
     public class MapCell
     {
         /// <summary>
@@ -80,7 +79,6 @@ namespace OceanOfCode
         /// <summary>
         /// Pour la recherche de chemin il faut un parent
         /// </summary>
-        [NonSerialized()]
         public MapCell Parent;
 
         public bool CanGoHere => !Visited && CellType == CellType.Empty;
@@ -94,7 +92,6 @@ namespace OceanOfCode
         /// </summary>
         public CellType CellType => Cell.ToCellType();
     }
-    [Serializable]
     public class PositionFinder
     {
         /// <summary>
@@ -111,7 +108,6 @@ namespace OceanOfCode
         public int H { get; set; }
 
     }
-    [Serializable]
     public class Position
         : PositionFinder
     {
@@ -236,7 +232,6 @@ namespace OceanOfCode
         public Position Position { get; set; } = new Position();
 
 
-
         /// <summary>
         /// Le nombre de point de vie
         /// on démarre avec 6 points de vie
@@ -291,9 +286,167 @@ namespace OceanOfCode
         #endregion
     }
 
+
+    public abstract class BaseOrder
+    {
+        public string Order { get; set; }
+        public OrderType OrderType { get; protected set; }
+
+    }
+
+
+    #region Devices
+    public abstract class Device
+        : BaseOrder
+    {
+        /// <summary>
+        /// Le type d'arme
+        /// </summary>
+        public DeviceType DeviceType { get; set; }
+        public static int Range { get; set; } = 0;
+        /// <summary>
+        /// Le temps à attendre avant réutilisation (disponibilité)
+        /// </summary>
+        public int Couldown { get; set; }
+
+        public abstract bool CanUse();
+        public abstract string Use();
+
+        public Device()
+        {
+            OrderType = OrderType.Device;
+        }
+    }
+
+    public class Torpedo
+        : Device
+    {
+        public Torpedo() : base()
+        {
+            DeviceType = DeviceType.Torpedo;
+            Range = 4;
+        }
+
+        /// <summary>
+        /// La position du tire
+        /// </summary>
+        public Position Position { get; set; }
+
+        public override bool CanUse()
+        {
+            return Couldown == 0;
+        }
+
+        /// <summary>
+        /// Il faut donner la position X, Y
+        /// </summary>
+        /// <returns></returns>
+        public override string Use()
+        {
+            return "TORPEDO {0} {1}|";
+        }
+    }
+
+    public class Sonar
+    : Device
+    {
+        public Sonar() : base()
+        {
+            DeviceType = DeviceType.Sonar;
+        }
+
+        public int Sector { get; set; }
+
+        public override bool CanUse()
+        {
+            return Couldown == 0;
+        }
+
+        /// <summary>
+        /// Il faut donner le secteur
+        /// </summary>
+        /// <returns></returns>
+        public override string Use()
+        {
+            return "SONAR {0}|";
+        }
+    }
+
+    public class Mine
+    : Device
+    {
+        public Mine() : base()
+        {
+            DeviceType = DeviceType.Mine;
+        }
+
+        public override bool CanUse()
+        {
+            throw new NotImplementedException();
+        }
+
+        public override string Use()
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class Silence
+    : Device
+    {
+        public Silence() : base()
+        {
+            DeviceType = DeviceType.Silence;
+            Range = 4;
+        }
+
+        public int Distance { get; set; } = -1;
+        public Direction Direction { get; set; } = Direction.None;
+
+        public override bool CanUse()
+        {
+            return Couldown == 0;
+        }
+
+        /// <summary>
+        /// Il faut donner la direction puis la distance
+        /// </summary>
+        /// <returns></returns>
+        public override string Use()
+        {
+            return "SILENCE {0} {1}|";
+        }
+    }
+    #endregion
+    public class Move
+        : BaseOrder
+    {
+        public Direction Direction { get; set; }
+        public bool WithLoading { get; set; }
+        public DeviceType DeviceLoading { get; set; }
+
+        public Move()
+        {
+            OrderType = OrderType.Move;
+        }
+    }
+
+    public class Surface
+        : BaseOrder
+    {
+        public int Sector { get; set; }
+        public Surface()
+        {
+            OrderType = OrderType.Surface;
+        }
+    }
+
     public class Instruction
     {
-        public string Command { get; set; }
+        public string FullCommand { get; set; }
+
+        public List<BaseOrder> Commands { get; set; } = new List<BaseOrder>();
+
         /// <summary>
         /// La direction demandée
         /// </summary>
@@ -324,7 +477,7 @@ namespace OceanOfCode
 
         public Instruction(Instruction i)
         {
-            Command = i.Command;
+            FullCommand = i.FullCommand;
             Direction = i.Direction;
             Device = i.Device;
             DevicePosition = i.DevicePosition;
@@ -339,6 +492,7 @@ namespace OceanOfCode
 
         public string ToCommand()
         {
+            // Todo à refaire !
             var attack = Device != DeviceType.None ? $"{Device.ToText().ToUpper()} {DevicePosition.Coordonate}|" : "";
             var move = Direction.ToMove() == null ? "SURFACE" : Direction.ToMove();
             var load = DeviceLoading != DeviceType.None ? $" {DeviceLoading.ToText().ToUpper()}" : "";
@@ -353,123 +507,7 @@ namespace OceanOfCode
         }
     }
 
-    #region Devices
-    public abstract class Device
-    {
-        /// <summary>
-        /// Le type d'arme
-        /// </summary>
-        public DeviceType DeviceType { get; set; }
-        public static int Range { get; set; } = 0;
-        /// <summary>
-        /// Le temps à attendre avant réutilisation (disponibilité)
-        /// </summary>
-        public int Couldown { get; set; }
-
-        public abstract bool CanUse();
-        public abstract string Use();
-    }
-
-    public class Torpedo
-        : Device
-    {
-        public Torpedo()
-        {
-            DeviceType = DeviceType.Torpedo;
-            Range = 4;
-        }
-
-        /// <summary>
-        /// La position du tire
-        /// </summary>
-        public Position Position { get; set; }
-
-        public override bool CanUse()
-        {
-            return Couldown == 0;
-        }
-
-        /// <summary>
-        /// Il faut donner la position X, Y
-        /// </summary>
-        /// <returns></returns>
-        public override string Use()
-        {
-            return "TORPEDO {0} {1}|";
-        }
-    }
-
-    public class Sonar
-    : Device
-    {
-        public Sonar()
-        {
-            DeviceType = DeviceType.Sonar;
-        }
-
-        public int Sector { get; set; }
-
-        public override bool CanUse()
-        {
-            return Couldown == 0;
-        }
-
-        /// <summary>
-        /// Il faut donner le secteur
-        /// </summary>
-        /// <returns></returns>
-        public override string Use()
-        {
-            return "SONAR {0}|";
-        }
-    }
-
-    public class Mine
-    : Device
-    {
-        public Mine()
-        {
-            DeviceType = DeviceType.Mine;
-        }
-
-        public override bool CanUse()
-        {
-            throw new NotImplementedException();
-        }
-
-        public override string Use()
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    public class Silence
-    : Device
-    {
-        public Silence()
-        {
-            DeviceType = DeviceType.Silence;
-            Range = 4;
-        }
-
-        public int Distance { get; set; }
-        public Direction Direction { get; set; }
-
-        public override bool CanUse()
-        {
-            return Couldown == 0;
-        }
-
-        /// <summary>
-        /// Il faut donner la direction puis la distance
-        /// </summary>
-        /// <returns></returns>
-        public override string Use()
-        {
-            return "SILENCE {0} {1}|";
-        }
-    }
-    #endregion
+ 
     #endregion
 
     public class GameManager
@@ -477,7 +515,7 @@ namespace OceanOfCode
         public List<Player> Players { get; set; } = new List<Player> { new Player { PlayerType = PlayerType.Me }, new Player { PlayerType = PlayerType.Enemy } };
         public Map Map { get; set; } = new Map();
 
-        public List<Player> VirtualPlayers { get; set; } = new List<Player>();
+        public List<Player> EnemyVirtualPlayers { get; set; } = new List<Player>();
 
         /// <summary>
         /// Le nombre de tour
@@ -595,14 +633,14 @@ namespace OceanOfCode
                         var position = new Position { X = xNumber, Y = yNumber };
                         // Console.Error.WriteLine($"Adding virtual player at: {position}");
                         var player = new Player { PlayerId = playerId, Position = position };
-                        VirtualPlayers.Add(player);
+                        EnemyVirtualPlayers.Add(player);
                         playerId++;
                     }
                     xNumber++;
                 });
                 yNumber++;
             });
-            Console.Error.WriteLine($" -> Done with: {VirtualPlayers.Count}");
+            Console.Error.WriteLine($" -> Done with: {EnemyVirtualPlayers.Count}");
         }
 
         #region Helpers
@@ -767,7 +805,7 @@ namespace OceanOfCode
 
         private void AnalyseCommand(Instruction instruction)
         {
-            if (string.IsNullOrEmpty(instruction.Command))
+            if (string.IsNullOrEmpty(instruction.FullCommand))
             {
                 Console.Error.WriteLine($"No command to analyse");
                 return;
@@ -784,44 +822,51 @@ namespace OceanOfCode
             // MOVE W TORPEDO|TORPEDO 2 11|SONAR 4|SILENCE W 4
             // TODO
 
-            var cmd = instruction.Command;
+            var cmd = instruction.FullCommand;
             foreach (var order in cmd.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 // un déplacement
                 if (order.Contains("MOVE"))
                 {
                     var orderMove = order.Substring(0, "MOVE N".Length);
-                    switch (order)
+                    var direction = Direction.None;
+                    switch (orderMove)
                     {
-                        case "MOVE S": instruction.Direction = Direction.South; break;
-                        case "MOVE N": instruction.Direction = Direction.North; break;
-                        case "MOVE W": instruction.Direction = Direction.West; break;
-                        case "MOVE E": instruction.Direction = Direction.Est; break;
+                        case "MOVE S": direction = Direction.South; break;
+                        case "MOVE N": direction = Direction.North; break;
+                        case "MOVE W": direction = Direction.West; break;
+                        case "MOVE E": direction = Direction.Est; break;
                     }
+                    instruction.Direction = direction;
 
                     var loading = order.Substring(orderMove.Length - 1);
+
+                    instruction.Commands.Add(new Move { Order = order, Direction = direction });
 
                 }
                 // une surface
                 else if (order.Contains("SURFACE"))
                 {
                     var orderSurface = order.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                    var secteur = int.Parse(orderSurface[1]);
+                    var sector = int.Parse(orderSurface[1]);
                     instruction.WithSurface = true;
-                    if (instruction.EstimatedPosition.Section != secteur)
+                    if (instruction.EstimatedPosition.Section != sector)
                     {
-                        var middle = secteur.ToMidleSectionPosition();
+                        var middle = sector.ToMidleSectionPosition();
                         instruction.EstimatedPosition = new EstimatedPosition(middle) { XPrecision = 3, YPrecision = 3 };
                         Console.Error.Write($" -> Surface set {instruction.EstimatedPosition}");
+                       
                     }
+                    instruction.Commands.Add(new Surface { Order = order, Sector = sector });
                 }
-                //
+                // déplacement silence
                 else if(order.Contains("SILENCE"))
                 {
                     instruction.Device = DeviceType.Silence;
+                    instruction.Commands.Add(new Silence { Order = order });
                 }
-                // Un device
-                else if(order.Contains("TOPERDO"))
+                // Une torpille
+                else if(order.Contains("TORPEDO"))
                 {
                     var ordersDevice = order.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                     var parsed = Enum.TryParse<DeviceType>(ordersDevice[0].ToPascalCase(), out var deviceType);
@@ -829,6 +874,17 @@ namespace OceanOfCode
                     {
                         instruction.Device = deviceType;
                         instruction.DevicePosition = new Position { X = int.Parse(ordersDevice[1]), Y = int.Parse(ordersDevice[2]) };
+                        instruction.Commands.Add(new Torpedo { Order = order, Position = new Position { X = int.Parse(ordersDevice[1]), Y = int.Parse(ordersDevice[2]) } });
+                    }
+                }
+                // Le sonar
+                else if (order.Contains("SONAR"))
+                {
+                    var ordersDevice = order.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    var parsed = Enum.TryParse<DeviceType>(ordersDevice[0].ToPascalCase(), out var deviceType);
+                    if (parsed)
+                    {
+                        instruction.Commands.Add(new Sonar { Order = order, Sector = int.Parse(ordersDevice[1])});
                     }
                 }
                 else
@@ -837,6 +893,7 @@ namespace OceanOfCode
                 }
             }
 
+            Console.Error.WriteLine($"Commands load: {instruction.Commands.Count}");
           
             Console.Error.WriteLine($"-> {instruction.EstimatedPosition}");
             Console.Error.WriteLine($"Instruction decrypted: {instruction}");
@@ -1083,7 +1140,7 @@ namespace OceanOfCode
             var yOffset = direction == Direction.South ? 1 : direction == Direction.North ? -1 : 0;
 
             var playerToRemove = new List<int>();
-            Parallel.ForEach(VirtualPlayers, currentVp =>
+            Parallel.ForEach(EnemyVirtualPlayers, currentVp =>
             {
                 if(currentVp.Position.IsValidPosition(Map, yOffset, xOffset)) {
                     currentVp.Position.X += xOffset;
@@ -1094,12 +1151,12 @@ namespace OceanOfCode
                 }
             });
 
-            playerToRemove.ForEach(p => VirtualPlayers.RemoveAll(pp => pp.PlayerId == p));
+            playerToRemove.ForEach(p => EnemyVirtualPlayers.RemoveAll(pp => pp.PlayerId == p));
 
-            Console.Error.WriteLine($" ->  {VirtualPlayers.Count} still in the game");
-            if(VirtualPlayers.Count == 1)
+            Console.Error.WriteLine($" ->  {EnemyVirtualPlayers.Count} still in the game");
+            if(EnemyVirtualPlayers.Count == 1)
             {
-                Enemy.Position = VirtualPlayers.First().Position;
+                Enemy.Position = EnemyVirtualPlayers.First().Position;
                 VirtualPlayersUsed = true;
             }
 
@@ -1455,6 +1512,7 @@ namespace OceanOfCode
 
         public static T DeepClone<T>(this T obj)
         {
+            // Use [Serializable]
             using (var ms = new MemoryStream())
             {
                 var formatter = new BinaryFormatter();
@@ -1620,7 +1678,7 @@ namespace OceanOfCode
         public static Instruction ToInstructions(this string move, Instruction instruction)
         {
 
-            instruction.Command = move;
+            instruction.FullCommand = move;
             // Console.Error.WriteLine($"ToInstructions set command: {instruction.Command}");
             return instruction;
 
@@ -1849,6 +1907,14 @@ namespace OceanOfCode
         None = 0,
         Real = 1,
         Estimated = 2
+    }
+    
+    public enum OrderType
+    {
+        None = 0,
+        Move = 1,
+        Device = 2,
+        Surface = 3
     }
     #endregion
 
