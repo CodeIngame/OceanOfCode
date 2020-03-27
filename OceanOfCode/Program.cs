@@ -452,6 +452,9 @@ namespace OceanOfCode
         public Direction Direction { get; set; } = Direction.None;
         public DeviceType DeviceLoading { get; set; } = DeviceType.None;
 
+        public int X { get; set; }
+        public int Y { get; set; }
+
         public Move()
         {
             OrderType = OrderType.Move;
@@ -588,8 +591,8 @@ namespace OceanOfCode
             else
                 _player = Enemy;
 
-            var xOffset = direction == Direction.West ? -1 : direction == Direction.Est ? 1 : 0;
-            var yOffset = direction == Direction.North ? -1 : direction == Direction.South ? 1 : 0;
+            var xOffset = direction.GetOffset(OffsetType.XOffset);
+            var yOffset = direction.GetOffset(OffsetType.YOffset);
 
             xOffset *= distance;
             yOffset *= distance;
@@ -1048,8 +1051,8 @@ namespace OceanOfCode
                     var lastDirection = lastInstruction.MoveCommand.Direction;
                     var newEstimatedPosition = new EstimatedPosition(previousInstruction.EstimatedPosition);
 
-                    var xOffset = lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
-                    var yOffset = lastDirection == Direction.South ? 1 : lastDirection == Direction.North ? -1 : 0;
+                    var xOffset = lastDirection.GetOffset(OffsetType.XOffset);
+                    var yOffset = lastDirection.GetOffset(OffsetType.YOffset);
 
                     if (!newEstimatedPosition.IsValidPosition(Map, yOffset, xOffset))
                     {
@@ -1091,8 +1094,8 @@ namespace OceanOfCode
                 _analyseMoveCase = "3.1";
 
                 var lastDirection = lastInstruction.MoveCommand.Direction;
-                var xOffset = lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
-                var yOffset = lastDirection == Direction.South ? 1 : lastDirection == Direction.North ? -1 : 0;
+                var xOffset = lastDirection.GetOffset(OffsetType.XOffset);
+                var yOffset = lastDirection.GetOffset(OffsetType.YOffset);
 
                 var newEnemyPosition = new Position(Enemy.Position);
 
@@ -1131,8 +1134,8 @@ namespace OceanOfCode
             {
                 if (vpToTake[i].Position.IsValidPosition(Map, direction))
                 {
-                    var xOffset = direction == Direction.Est ? 1 : direction == Direction.West ? -1 : 0;
-                    var yOffset = direction == Direction.South ? 1 : direction == Direction.North ? -1 : 0;
+                    var xOffset = direction.GetOffset(OffsetType.XOffset);
+                    var yOffset = direction.GetOffset(OffsetType.YOffset);
 
                     vpToTake[i].Position.X += xOffset;
                     vpToTake[i].Position.Y += yOffset;
@@ -1360,6 +1363,8 @@ namespace OceanOfCode
             // on combine le tout avec les derniers déplacement pour localiser la position de quelqu'un
             if (Me.Torpedo.CanUse())
                 UseTorpedo(instruction);
+            if (Me.Silence.CanUse())
+                UseSilence(instruction);
 
         }
 
@@ -1429,6 +1434,11 @@ namespace OceanOfCode
 
             Console.Error.Write($"-> _useTorpedo: {_useTorpedo} - msg: {associatedMessage}");
 
+
+        }
+        
+        private void UseSilence(Instruction instruction)
+        {
 
         }
         #endregion
@@ -1521,7 +1531,7 @@ namespace OceanOfCode
                     Console.Error.WriteLine($" found {paths[0].Position} with: {direction.ToMove()}");
 
                     paths[0].Visited = true;
-                    instruction.Commands.Add(new Move { Direction = direction });
+                    instruction.Commands.Add(new Move { Direction = direction, X = paths[0].Position.X, Y = paths[0].Position.Y });
                 }
                 else
                 {
@@ -1532,6 +1542,12 @@ namespace OceanOfCode
                     // MoveRandom(instruction, dico);
                 }
             }
+
+
+            Me.Position.X = instruction.MoveCommand.X;
+            Me.Position.Y = instruction.MoveCommand.Y;
+
+
         }
 
         private void MoveRandom(Instruction instruction, Dictionary<Direction, MapCell> dico)
@@ -1793,11 +1809,11 @@ namespace OceanOfCode
 
         public static bool IsValidPosition(this Position p1, Map map, Direction nextDirection)
         {
-            var xOffset = nextDirection == Direction.West ? -1 : nextDirection == Direction.Est ? 1 : 0;
-            var yOffset = nextDirection == Direction.North ? -1 : nextDirection == Direction.South ? 1 : 0;
+            var xOffset = nextDirection.GetOffset(OffsetType.XOffset);
+            var yOffset = nextDirection.GetOffset(OffsetType.YOffset);
             return p1.IsValidPosition(map, yOffset, xOffset);
         }
-
+ 
         public static bool IsValidPosition(this Position p1, Map map, int yOffset = 0, int xOffset = 0)
         {
             var isValid = true;
@@ -1832,6 +1848,14 @@ namespace OceanOfCode
     }
     public static class DirectionHelpers
     {
+        public static int GetOffset(this Direction nextDirection, OffsetType offsetType)
+        {
+            var xOffset = nextDirection == Direction.West ? -1 : nextDirection == Direction.Est ? 1 : 0;
+            var yOffset = nextDirection == Direction.North ? -1 : nextDirection == Direction.South ? 1 : 0;
+
+            return offsetType == OffsetType.XOffset ? xOffset : yOffset;
+        }
+
         public static string ToMove(this Direction direction)
         {
             switch (direction)
@@ -2117,6 +2141,12 @@ namespace OceanOfCode
         Move = 1,
         Device = 2,
         Surface = 3
+    }
+
+    public enum OffsetType
+    {
+        XOffset,
+        YOffset
     }
     #endregion
 
