@@ -214,7 +214,13 @@ namespace OceanOfCode
         }
     }
 
+    public class VirtualPlayer
+    {
+        public bool StillInGame { get; set; } = true;
+    }
+
     public class Player
+        : VirtualPlayer
     {
         /// <summary>
         /// Identifiant du joueur
@@ -539,7 +545,7 @@ namespace OceanOfCode
 
         public Torpedo TorpedoCommand => (Torpedo)DeviceCommands.FirstOrDefault(d => d.DeviceType == DeviceType.Torpedo) ?? new Torpedo();
         public Sonar SonarCommand => (Sonar)DeviceCommands.FirstOrDefault(d => d.DeviceType == DeviceType.Sonar) ?? new Sonar();
-        public Silence SilenceCommand => (Silence)DeviceCommands.FirstOrDefault(d => d.DeviceType == DeviceType.Silence) ?? new Silence();
+        public Silence SilenceCommand => (Silence)DeviceCommands.FirstOrDefault(d => d.DeviceType == DeviceType.Silence) ?? null;
         public Mine MineCommand => (Mine)DeviceCommands.FirstOrDefault(d => d.DeviceType == DeviceType.Mine) ?? new Mine();
 
         #endregion
@@ -554,6 +560,13 @@ namespace OceanOfCode
         public Map Map { get; set; } = new Map();
 
         public List<Player> EnemyVirtualPlayers { get; set; } = new List<Player>();
+        public List<Player> MeVirtualPlayers { get; set; } = new List<Player>();
+
+        public void ResetVirtualPlayer(PlayerType playerType)
+        {
+            var virtualPlayer = playerType == PlayerType.Me ? MeVirtualPlayers : EnemyVirtualPlayers;
+            virtualPlayer.ForEach(vp => vp.StillInGame = true);
+        }
 
         /// <summary>
         /// Le nombre de tour
@@ -668,10 +681,13 @@ namespace OceanOfCode
                     var isEmpty = c.CellType == CellType.Empty;
                     if(isEmpty)
                     {
-                        var position = new Position { X = xNumber, Y = yNumber };
+                        //var position = new Position { X = xNumber, Y = yNumber };
                         // Console.Error.WriteLine($"Adding virtual player at: {position}");
-                        var player = new Player { PlayerId = playerId, Position = position };
+                        var player = new Player { PlayerId = playerId, Position = new Position { X = xNumber, Y = yNumber } };
+                        var player2 = new Player { PlayerId = playerId, Position = new Position { X = xNumber, Y = yNumber } };
+
                         EnemyVirtualPlayers.Add(player);
+                        MeVirtualPlayers.Add(player2);
                         playerId++;
                     }
                     xNumber++;
@@ -679,6 +695,12 @@ namespace OceanOfCode
                 yNumber++;
             });
             Console.Error.WriteLine($" -> Done with: {EnemyVirtualPlayers.Count}");
+        }
+        public void AddSilenceVirtualPlayer(PlayerType p)
+        {
+            // On va ajouter 16 joueurs dans le games
+            // Todo à voir
+            // Uniquement dans le cas ou la position est connue
         }
 
         #region Helpers
@@ -785,6 +807,23 @@ namespace OceanOfCode
             string sonarResult = Helpers.ReadLine(debug: false);
             string opponentOrders = Helpers.ReadLine(debug: false);
 
+            // Mon ordre de sonar est validé
+            if(sonarResult != "NA")
+            {
+                var sonarCommand = Me.LastInstruction.SonarCommand;
+                if(sonarResult.Contains("Y"))
+                {
+                    var currentEnemySector = Enemy.LastInstruction.EstimatedPosition.Section;
+                    var isOk = sonarCommand.Sector == currentEnemySector;
+                    if(!isOk)
+                    {
+                        Console.Error.WriteLine("SetPlayersInformations -> updated position from sonar");
+                        Enemy.LastEstimatedPosition = new EstimatedPosition(sonarCommand.Sector.ToMidleSectionPosition()) { XPrecision = 4, Y = 4 };
+                    }
+
+                }
+            }
+
             // On enregistre le précédent déplacement
             if (opponentOrders != "NA")
             {
@@ -808,12 +847,15 @@ namespace OceanOfCode
         {
             Console.Error.WriteLine($"Starting a new turn: {Counter+1}");
             var instruction = new Instruction();
-            Analyze(instruction);
+           
+            AnalyzeEnemy(instruction);
             Move(instruction);
             UseDevice(instruction);
             LoadDevice(instruction);
 
             Me.LastInstructions.Add(instruction);
+
+            AnalyseMe();
 
             Counter++;
             Console.WriteLine(instruction.ToCommand());
@@ -821,21 +863,55 @@ namespace OceanOfCode
         }
 
         #region Analyze
+        private void AnalyseMe()
+        {
+            // todo il faut analyser le silence pour reset le virtual player
+            if (Counter >= 0)
+            {
+                //foreach (var cmd in Me.LastInstruction.Commands)
+                //{
+                //    switch (cmd.OrderType)
+                //    {
+                //        case OrderType.None:
+                //            break;
+                //        case OrderType.Move:
+                //            AnalyseMove(instruction);
+                //            AnalyseVirtualPlayers(PlayerType.Enemy);
+                //            break;
+                //        case OrderType.Device:
+                //            var device = (Device)cmd;
+                           
+
+
+                //            break;
+                //        case OrderType.Surface:
+                //            break;
+                //    }
+                //}
+                    AnalyseVirtualPlayers(PlayerType.Me);
+
+                if(Me.LastInstruction.SilenceCommand != null)
+                {
+
+                }
+            }
+
+        }
+
         /// <summary>
         /// Permet d'analyser ce qui s'est passé sur le tour précédent
         /// </summary>
         /// <param name="instruction"></param>
-        private void Analyze(Instruction instruction)
+        private void AnalyzeEnemy(Instruction instruction)
         {
             AnalyseCommand(Enemy.LastInstruction);
 
             if (Counter > 1)
             {
-
                 Console.Error.WriteLine("--Analyze--");
 
                 // Il faut analyser dans l'ordre des commandes de l'enemie
-                foreach(var cmd in Enemy.LastInstruction.Commands)
+                foreach (var cmd in Enemy.LastInstruction.Commands)
                 {
                     switch (cmd.OrderType)
                     {
@@ -843,7 +919,7 @@ namespace OceanOfCode
                             break;
                         case OrderType.Move:
                             AnalyseMove(instruction);
-                            AnalyseVirtualPlayers();
+                            AnalyseVirtualPlayers(PlayerType.Enemy);
                             break;
                         case OrderType.Device:
                             var device = (Device)cmd;
@@ -978,7 +1054,14 @@ namespace OceanOfCode
                     if (!newEstimatedPosition.IsValidPosition(Map, yOffset, xOffset))
                     {
                         _analyseMoveCase = "1.1";
-                        Console.Error.Write(" No reachable position, define close position");
+
+                        // On reset pour le moment ...
+                        newEstimatedPosition.X = -1;
+                        newEstimatedPosition.Y = -1;
+                        newEstimatedPosition.XPrecision += 1;
+                        newEstimatedPosition.YPrecision += 1;
+
+                        //Console.Error.Write(" No reachable position, define close position");
                     }
                     else
                     {
@@ -987,16 +1070,17 @@ namespace OceanOfCode
                         newEstimatedPosition.Y += yOffset;
                     }
 
-                    // TODO il faudrait vérifier que l'emplacement est accessible (pas un bout d'île)
                     lastInstruction.EstimatedPosition = newEstimatedPosition;
                     // Console.Error.WriteLine($"Enemy estimated postion updated to: {lastInstruction.EstimatedPosition}");
                 }
                 else
                 {
+                    _analyseMoveCase = "2.1";
+
                     // On connait pas encore sa positon mais il a fait surface
                     if (previousInstruction.SurfaceCommand.IsValid)
                     {
-
+                        _analyseMoveCase = "2.1.1";
                     }
                 }
             }
@@ -1004,7 +1088,7 @@ namespace OceanOfCode
             if (Enemy.Position.Known)
             {
                 // Console.Error.WriteLine("Track move !");
-                _analyseMoveCase = "2.1";
+                _analyseMoveCase = "3.1";
 
                 var lastDirection = lastInstruction.MoveCommand.Direction;
                 var xOffset = lastDirection == Direction.Est ? 1 : lastDirection == Direction.West ? -1 : 0;
@@ -1017,7 +1101,7 @@ namespace OceanOfCode
 
                 if (newEnemyPosition.IsValidPosition(Map, yOffset, xOffset))
                 {
-                    _analyseMoveCase = "2.2";
+                    _analyseMoveCase = "3.2";
 
                     //Console.Error.Write($"Enemy Position : {Enemy.Position} ->");
                     Enemy.Position.X += xOffset;
@@ -1030,41 +1114,53 @@ namespace OceanOfCode
         }
 
 
-        private void AnalyseVirtualPlayers()
+        private void AnalyseVirtualPlayers(PlayerType pt)
         {
-            var direction = Enemy.LastInstruction.MoveCommand.Direction;
-            if (direction == Direction.None)
-                return;
 
             Console.Error.Write("AnalyseVirtualPlayer");
 
-            var xOffset = direction == Direction.Est ? 1 : direction == Direction.West ? -1 : 0;
-            var yOffset = direction == Direction.South ? 1 : direction == Direction.North ? -1 : 0;
+            var direction = pt == PlayerType.Me ? Me.LastInstruction.MoveCommand.Direction : Enemy.LastInstruction.MoveCommand.Direction;
 
-            var playerToRemove = new List<int>();
-            Parallel.ForEach(EnemyVirtualPlayers, currentVp =>
+            if (direction == Direction.None)
+                return;
+
+            var virtuals = pt == PlayerType.Me ? MeVirtualPlayers : EnemyVirtualPlayers;
+
+            var vpToTake = virtuals.Where(ev => ev.StillInGame).ToList();
+            for(var i = 0; i<vpToTake.Count; i++)
             {
-                if (currentVp.Position.IsValidPosition(Map, yOffset, xOffset))
+                if (vpToTake[i].Position.IsValidPosition(Map, direction))
                 {
-                    currentVp.Position.X += xOffset;
-                    currentVp.Position.Y += yOffset;
+                    var xOffset = direction == Direction.Est ? 1 : direction == Direction.West ? -1 : 0;
+                    var yOffset = direction == Direction.South ? 1 : direction == Direction.North ? -1 : 0;
+
+                    vpToTake[i].Position.X += xOffset;
+                    vpToTake[i].Position.Y += yOffset;
                 }
                 else
                 {
-                    playerToRemove.Add(currentVp.PlayerId);
+                    vpToTake[i].StillInGame = false;
                 }
-            });
-
-            playerToRemove.ForEach(p => EnemyVirtualPlayers.RemoveAll(pp => pp.PlayerId == p));
-
-            Console.Error.WriteLine($" ->  {EnemyVirtualPlayers.Count} still in the game");
-            if (EnemyVirtualPlayers.Count == 1)
+            }
+          
+            var stillInGame = vpToTake.Count(ev => ev.StillInGame);
+            if (stillInGame == 1)
             {
-                Enemy.Position = EnemyVirtualPlayers.First().Position;
-                VirtualPlayersUsed = true;
+                if (pt == PlayerType.Enemy)
+                {
+                    Enemy.Position = vpToTake.First(x => x.StillInGame).Position;
+                    VirtualPlayersUsed = true;
+                }
+
+                if (pt == PlayerType.Me)
+                {
+                    Console.Error.WriteLine($" Enemy know i'm at {vpToTake.First(x => x.StillInGame).Position}");
+                }
             }
 
+            Console.Error.WriteLine($" ->  {stillInGame} {pt.ToString()}");
         }
+    
         #endregion
 
 
@@ -1079,6 +1175,10 @@ namespace OceanOfCode
                 case DeviceType.Sonar:
                     break;
                 case DeviceType.Silence:
+                    // Il faut reset les virtual players
+                    AddSilenceVirtualPlayer(PlayerType.Enemy);
+                    ResetVirtualPlayer(PlayerType.Enemy);
+
                     break;
                 case DeviceType.Torpedo:
                     AnalyseToperdo(instruction);
@@ -1689,6 +1789,13 @@ namespace OceanOfCode
                 direction = Direction.South;
 
             return direction;
+        }
+
+        public static bool IsValidPosition(this Position p1, Map map, Direction nextDirection)
+        {
+            var xOffset = nextDirection == Direction.West ? -1 : nextDirection == Direction.Est ? 1 : 0;
+            var yOffset = nextDirection == Direction.North ? -1 : nextDirection == Direction.South ? 1 : 0;
+            return p1.IsValidPosition(map, yOffset, xOffset);
         }
 
         public static bool IsValidPosition(this Position p1, Map map, int yOffset = 0, int xOffset = 0)
