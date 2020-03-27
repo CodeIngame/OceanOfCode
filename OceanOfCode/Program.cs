@@ -1440,6 +1440,63 @@ namespace OceanOfCode
         private void UseSilence(Instruction instruction)
         {
 
+            // Utilisation du silence en défensif
+            var virtualMeInGame = MeVirtualPlayers.Count(x => x.StillInGame);
+            if(virtualMeInGame < 10)
+            {
+                var d = new List<Direction> { Direction.Est, Direction.West, Direction.None, Direction.South };
+
+                var choices = new Dictionary<Direction, List<int>> {
+                    { Direction.Est, Enumerable.Range(1, 4).ToList() },
+                    { Direction.North, Enumerable.Range(1, 4).ToList() },
+                    { Direction.West, Enumerable.Range(1, 4).ToList() },
+                    { Direction.South, Enumerable.Range(1, 4).ToList() }
+                };
+
+                var result = new Dictionary<Direction, int>
+                {
+                    {  Direction.Est, 0 },
+                    {  Direction.West, 0 },
+                    {  Direction.North, 0 },
+                    {  Direction.South, 0 }
+                };
+
+                int xOffset = 0;
+                int yOffset = 0;
+
+                foreach (var _d in choices)
+                {
+                    xOffset = _d.Key.GetOffset(OffsetType.XOffset);
+                    yOffset = _d.Key.GetOffset(OffsetType.YOffset);
+
+                    foreach(var distance in _d.Value)
+                    {
+                        var isValid = Me.Position.IsValidPosition(Map, yOffset * distance, xOffset * distance, true);
+                        if(isValid)
+                        {
+                            result[_d.Key] = distance;
+                        } else
+                        {
+                            break;
+                        }
+                    };
+                }
+
+                var max = result.ToList().OrderByDescending(x => x.Value).First();
+
+                xOffset = max.Key.GetOffset(OffsetType.XOffset);
+                yOffset = max.Key.GetOffset(OffsetType.YOffset);
+
+                for(int i = 1; i<=max.Value; i++)
+                {
+                    Map[Me.Position.X + xOffset * i, Me.Position.Y + yOffset *i].Visited = true;
+                }
+
+                instruction.Commands.Add(new Silence { Direction = max.Key, Distance = max.Value });
+                ResetVirtualPlayer(PlayerType.Me);
+            }
+
+
         }
         #endregion
 
@@ -1669,11 +1726,11 @@ namespace OceanOfCode
                 return;
             }
 
-            if (Me.Sonar.Couldown > 0)
-            {
-                instruction.MoveCommand.DeviceLoading = DeviceType.Sonar;
-                return;
-            }
+            //if (Me.Sonar.Couldown > 0)
+            //{
+            //    instruction.MoveCommand.DeviceLoading = DeviceType.Sonar;
+            //    return;
+            //}
 
             // WTF
             // Console.WriteLine("MOVE W TORPEDO|TORPEDO 2 11|SONAR 4|SILENCE W 4");
@@ -1814,7 +1871,7 @@ namespace OceanOfCode
             return p1.IsValidPosition(map, yOffset, xOffset);
         }
  
-        public static bool IsValidPosition(this Position p1, Map map, int yOffset = 0, int xOffset = 0)
+        public static bool IsValidPosition(this Position p1, Map map, int yOffset = 0, int xOffset = 0, bool checkVisited = false)
         {
             var isValid = true;
             var height = p1.Y + yOffset;
@@ -1827,6 +1884,9 @@ namespace OceanOfCode
                 isValid = false;
 
             if (isValid && map[p1.X + xOffset, p1.Y + yOffset].CellType == CellType.Island)
+                isValid = false;
+
+            if (isValid && checkVisited && map[p1.X + xOffset, p1.Y + yOffset].Visited)
                 isValid = false;
 
             // Console.Error.WriteLine($"{p1} is valid position ? {isValid}  ({height}, {width})");
