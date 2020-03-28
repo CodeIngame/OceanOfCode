@@ -134,7 +134,7 @@ namespace OceanOfCode
         /// <summary>
         /// D�termine si la position est connu
         /// </summary>
-        public bool Known => this.X != -1 && this.Y != -1;
+        public bool Known => X != -1 && Y != -1;
         public string Coordonate => $"{X} {Y}";
         public override string ToString()
         {
@@ -1110,7 +1110,7 @@ namespace OceanOfCode
             {
                 if (pt == PlayerType.Enemy)
                 {
-                    Enemy.Position = vpToTake.First(x => x.StillInGame).Position;
+                    Enemy.Position = new Position(vpToTake.First(x => x.StillInGame).Position);
                     VirtualPlayersUsed = true;
                 }
 
@@ -1480,7 +1480,7 @@ namespace OceanOfCode
 
             if (Enemy.Position.Known)
             {
-                if (distance >= 3)
+                if (distance >= Torpedo.Range)
                 {
                     _caseMove = "1.1";
                     MoveToPosition(instruction, dico, Enemy.Position);
