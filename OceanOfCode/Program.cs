@@ -1375,7 +1375,16 @@ namespace OceanOfCode
 
 
             // On se se tire pas dessus !
-            if (cellToAttack != null && (cellToAttack.Position == Me.Position || cellToAttack.Position.Distance(Me.Position) <= 2)) //&& Me.HealthPoint < Enemy.HealthPoint)
+            // On tire pas sur les iles
+
+            if (
+                cellToAttack != null && 
+                    (
+                        cellToAttack.Position == Me.Position
+                        || cellToAttack.Position.Distance(Me.Position) <= 2
+                        || cellToAttack.CellType == CellType.Island
+                    )
+               ) //&& Me.HealthPoint < Enemy.HealthPoint)
             {
                 _useTorpedo = "4";
                 cellToAttack = null;
