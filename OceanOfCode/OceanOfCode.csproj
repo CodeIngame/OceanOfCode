@@ -5,4 +5,8 @@
     <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
 
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="Powershell.exe -ExecutionPolicy Unrestricted -file &quot;C:\Users\Q z L\Documents\Visual Studio 2019\Projects\CodeInGame\OceanOfCode\Ouputs\merge.ps1&quot;" />
+  </Target>
+
 </Project>

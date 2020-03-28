@@ -5,7 +5,13 @@ VisualStudioVersion = 16.0.29806.167
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OceanOfCode", "OceanOfCode\OceanOfCode.csproj", "{B94AFAB3-C1C9-44B3-9F51-B6D841B474AF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{7974F712-B7C1-4E91-80F5-701FEE5294AB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Tests", "Tests\Tests.csproj", "{7974F712-B7C1-4E91-80F5-701FEE5294AB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Ouputs", "Ouputs", "{80A407E8-5653-4452-95DA-88345F94189D}"
+	ProjectSection(SolutionItems) = preProject
+		Ouputs\merge.cs = Ouputs\merge.cs
+		Ouputs\merge.ps1 = Ouputs\merge.ps1
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

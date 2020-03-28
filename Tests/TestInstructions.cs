@@ -1,9 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
+﻿
 namespace Tests
 {
+    using System;
+    using System.Collections.Generic;
+    using System.Text;
     public class TestInstructions
     {
 
@@ -22,19 +22,9 @@ namespace Tests
 
                 }
 
-              
             }
-
-
         }
     }
 
-    public enum DeviceType
-    {
-        None = 0,
-        Torpedo = 1,
-        Sonar = 2,
-        Silence = 3,
-        Mine = 4
-    }
+  
 }
